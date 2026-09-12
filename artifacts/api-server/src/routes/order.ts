@@ -1,0 +1,46 @@
+import { Router, type IRouter } from "express";
+import { authenticate, requireRole } from "../middleware/auth";
+import { antiFakeGPS } from "../middleware/antiFakeGPS";
+import {
+  acceptOrder,
+  cancelOrder,
+  createOrder,
+  getOrder,
+  listOrders,
+  offerToFirstDriver,
+  updateOrderStatus,
+} from "../controllers/orderController";
+
+const router: IRouter = Router();
+
+router.get("/orders", authenticate, listOrders);
+router.post(
+  "/orders",
+  authenticate,
+  requireRole("passenger"),
+  antiFakeGPS,
+  createOrder,
+);
+router.get("/orders/:orderId", authenticate, getOrder);
+router.post(
+  "/orders/:orderId/accept",
+  authenticate,
+  requireRole("driver"),
+  acceptOrder,
+);
+router.patch(
+  "/orders/:orderId/status",
+  authenticate,
+  requireRole("driver"),
+  antiFakeGPS,
+  updateOrderStatus,
+);
+router.post("/orders/:orderId/cancel", authenticate, cancelOrder);
+router.post(
+  "/orders/:orderId/offer-first-driver",
+  authenticate,
+  requireRole("driver"),
+  offerToFirstDriver,
+);
+
+export default router;

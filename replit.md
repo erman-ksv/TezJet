@@ -1,6 +1,6 @@
-# [Project name]
+# TezJet
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+TezJet is a rural taxi hailing API with OTP authentication, FIFO driver queueing, route pooling, and realtime trip updates.
 
 ## Run & Operate
 
@@ -22,23 +22,31 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/api-server/src/routes` — auth, queue, order, and notification endpoints
+- `artifacts/api-server/src/controllers` — request orchestration and business rules
+- `artifacts/api-server/src/middleware` — JWT session checks, role checks, and anti-fake GPS
+- `artifacts/api-server/src/store/memoryStore.ts` — runnable in-memory state adapter
+- `artifacts/api-server/src/socket.ts` — authenticated Socket.io events
+- `artifacts/api-server/README.md` — API usage and event reference
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- JWT session versions invalidate every previous token when a user logs in again.
+- The queue keeps drivers with an active pickup or pooled trip ahead of waiting drivers.
+- Point C seats are reserved for seven minutes and then automatically released.
+- Point D pooling targets the first in-transit driver with sufficient remaining seats.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Passengers register with OTP, request rural trips, and receive live status updates. Drivers join a geofenced FIFO queue, accept pickups, maintain their queue priority, and receive high-priority pooled trip offers.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+The product name is TezJet.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+The current adapter stores users, queues, orders, OTPs, and device registrations in memory. Use a durable database and shared cache before running multiple production instances.
 
 ## Pointers
 

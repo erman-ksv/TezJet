@@ -1,5 +1,18 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { createServer } from "node:http";
+import { createRealtimeServer } from "./socket";
+import { store } from "./store/memoryStore";
+
+const httpServer = createServer(app);
+const io = createRealtimeServer(httpServer);
+app.locals.io = io;
+const cleanupTimer = setInterval(() => {
+  // Seat locks are kept in memory for this runnable API adapter and expire automatically.
+  // A database-backed adapter can move this responsibility to a scheduled job.
+  store.clearExpiredSeatLocks();
+}, 30_000);
+cleanupTimer.unref();
 
 const rawPort = process.env["PORT"];
 
@@ -15,11 +28,13 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+httpServer.listen(port, () => {
+  logger.info({ port }, "TezJet API and realtime server listening");
+});
+
+httpServer.on("error", (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
-
-  logger.info({ port }, "Server listening");
 });

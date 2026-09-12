@@ -8,6 +8,7 @@ import { translate } from "../utils/i18n";
 import { emitIncomingOrder, emitOrderUpdate, emitQueueUpdate } from "../utils/realtime";
 import { serializeOrder } from "../utils/serialize";
 import { boundedInteger, optionalString, pickEnum, requiredString } from "../utils/validation";
+import { normalizeNaturalLanguageAddress } from "../services/geminiAddressService";
 
 const statusTransitions: Record<OrderStatus, readonly OrderStatus[]> = {
   searching: ["en_route_to_c", "cancelled"],
@@ -82,17 +83,32 @@ function sendOrderToDriver(io: Server | undefined, order: Order, driverId: strin
   emitIncomingOrder(io, driverId, order);
 }
 
-export function createOrder(request: Request, response: Response): void {
+export async function createOrder(
+  request: Request,
+  response: Response,
+): Promise<void> {
   const passengerId = assertPassenger(request);
   const pickupPoint = pickEnum(request.body?.pickup_point ?? "C", "pickup_point", [
     "C",
     "D",
   ] as const) as PickupPoint;
+  const pickupAddressText = optionalString(
+    request.body?.pickup_address,
+    "pickup_address",
+    500,
+  );
+  const pickupAddress = pickupAddressText
+    ? await normalizeNaturalLanguageAddress(
+        pickupAddressText,
+        request.auth?.locale ?? "ru",
+      )
+    : undefined;
   const order = store.createOrder({
     passengerId,
     passengerPhone: request.auth?.user.phoneNumber ?? "",
     pickupPoint,
     pickupLocation: getPickupLocation(request),
+    pickupAddress,
     destination: requiredString(request.body?.destination, "destination", 240),
     seats: boundedInteger(request.body?.seats ?? 1, "seats", 1, 8),
     status: "searching",

@@ -4,6 +4,25 @@ TezJet is a rural taxi hailing backend with OTP registration, single-session JWT
 authentication, an anti-fraud location gate, FIFO driver queuing, Point C seat
 locks, Point D route pooling, and Socket.io realtime events.
 
+## Natural-language addresses
+
+TezJet can use the Google Gemini API to turn a phrase such as
+`Корасув, рядом со школой` into a structured address:
+
+- `POST /api/addresses/normalize`
+  - Body: `{ "address": "..." }`
+  - Requires a TezJet bearer token.
+  - Returns normalized locality, street, house number, landmarks, optional
+    coordinates, confidence, and uncertainty notes.
+
+Passenger orders may also include `pickup_address`. The normalized result is
+stored in the order as `pickup_address`, while `pickup_location` remains the
+authoritative GPS coordinate and still passes the anti-fake GPS middleware.
+
+Set `GEMINI_API_KEY` as a Replit Secret. The optional `GEMINI_MODEL` environment
+variable overrides the default `gemini-3.6-flash` model. API keys are never
+returned in responses or written to source files.
+
 ## Run
 
 ```bash

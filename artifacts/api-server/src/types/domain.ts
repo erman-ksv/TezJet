@@ -22,6 +22,23 @@ export interface Coordinates {
   isMocked?: boolean;
 }
 
+export interface NormalizedAddress {
+  original: string;
+  normalized: string;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  district: string | null;
+  street: string | null;
+  houseNumber: string | null;
+  postalCode: string | null;
+  landmarks: string[];
+  latitude: number | null;
+  longitude: number | null;
+  confidence: "low" | "medium" | "high";
+  notes: string[];
+}
+
 export interface User {
   id: string;
   role: UserRole;
@@ -62,6 +79,7 @@ export interface Order {
   offeredDriverId?: string;
   pickupPoint: PickupPoint;
   pickupLocation: Coordinates;
+  pickupAddress?: NormalizedAddress;
   destination: string;
   seats: number;
   status: OrderStatus;

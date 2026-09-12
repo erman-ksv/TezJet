@@ -4,6 +4,7 @@ import authRouter from "./auth";
 import queueRouter from "./queue";
 import orderRouter from "./order";
 import notificationRouter from "./notifications";
+import addressRouter from "./address";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(authRouter);
 router.use(queueRouter);
 router.use(orderRouter);
 router.use(notificationRouter);
+router.use(addressRouter);
 
 export default router;

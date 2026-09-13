@@ -39,6 +39,19 @@ export interface NormalizedAddress {
   notes: string[];
 }
 
+export interface RouteStop {
+  code: string;
+  name: string;
+  priceKzt: number;
+}
+
+export interface FareQuote {
+  currency: "KZT";
+  stops: RouteStop[];
+  totalKzt: number;
+  calculatedAt: string;
+}
+
 export interface User {
   id: string;
   role: UserRole;
@@ -80,6 +93,8 @@ export interface Order {
   pickupPoint: PickupPoint;
   pickupLocation: Coordinates;
   pickupAddress?: NormalizedAddress;
+  routeStops: RouteStop[];
+  fare: FareQuote;
   destination: string;
   seats: number;
   status: OrderStatus;

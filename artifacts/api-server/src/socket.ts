@@ -4,6 +4,7 @@ import { store } from "./store/memoryStore";
 import { readSocketToken } from "./middleware/auth";
 import { verifyAccessToken } from "./utils/token";
 import { logger } from "./lib/logger";
+import { PYATAK_ZONE } from "./utils/config";
 
 export function createRealtimeServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
@@ -36,9 +37,33 @@ export function createRealtimeServer(httpServer: HttpServer): Server {
   io.on("connection", (socket) => {
     const userId = socket.data.userId as string;
     socket.join(`user:${userId}`);
+    socket.join(`queue:${PYATAK_ZONE.id}`);
     socket.emit("connected", {
       user_id: userId,
-      events: ["incoming_order", "order:status", "queue:update", "push_alert"],
+      events: [
+        "incoming_order",
+        "order:status",
+        "queue:snapshot",
+        "queue:update",
+        "queue:joined",
+        "queue:left",
+        "queue:status",
+        "queue:location",
+        "queue:position",
+        "queue:reordered",
+        "push_alert",
+      ],
+    });
+    socket.emit("queue:snapshot", {
+      zone: {
+        id: PYATAK_ZONE.id,
+        name: PYATAK_ZONE.name,
+        center: PYATAK_ZONE.center,
+        geofence_meters: PYATAK_ZONE.radiusMeters,
+      },
+      queue: store.queueSnapshot(),
+      your_position: store.getQueuePosition(userId),
+      updated_at: new Date().toISOString(),
     });
     logger.info({ userId, socketId: socket.id }, "Socket client connected");
 

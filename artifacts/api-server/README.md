@@ -49,17 +49,27 @@ multi-instance workers.
 
 ## Queue and orders
 
-- `GET /api/queue` — current FIFO queue and your position.
-- `POST /api/queue/join` — driver joins within 150 m of the configured queue point.
+- `GET /api/queue` — current FIFO queue, Pyatak zone and your position.
+- `POST /api/queue/join` — driver joins within the configured Pyatak geofence.
 - `PATCH /api/queue/location` — location update checked by anti-fake GPS middleware.
 - `PATCH /api/queue/status` — `searching`, `picking_up`, `en_route_to_c`, `arrived_at_c`, `in_transit`.
-- `POST /api/orders` — passenger creates a Point C or Point D order.
+- `GET /api/fares/stops` — fixed Pyatak route-stop catalog and prices.
+- `POST /api/fares/estimate` — calculate a fixed fare from `{ "route_stops": ["C", "D"] }`.
+- `POST /api/orders` — passenger creates a Point C or Point D order. Optional
+  `route_stops` uses the same fixed catalog; when omitted, the pickup point is
+  used as the single stop.
 - `POST /api/orders/:orderId/accept` — #1 driver accepts; Point C gets a 7-minute seat lock.
 - `PATCH /api/orders/:orderId/status` — driver advances `en_route_to_c` → `arrived_at_c` → `in_transit` → `completed`.
 - `POST /api/orders/:orderId/cancel` — passenger or assigned driver cancels.
 
 Point D orders are offered to the first in-transit driver with enough seats.
 Driver-facing order responses mask passenger phone numbers.
+
+The default fixed prices are Point C — 500 KZT and Point D — 700 KZT. They
+can be replaced at startup with `PYATAK_ROUTE_STOP_PRICES`, a JSON array such
+as `[{"code":"C","name":"Point C","priceKzt":500}]`. The Pyatak center and
+radius can be configured with `PYATAK_CENTER_LAT`, `PYATAK_CENTER_LNG`, and
+`PYATAK_GEOFENCE_METERS`.
 
 ## Realtime and push-ready events
 
@@ -73,7 +83,11 @@ The server emits:
 
 - `incoming_order` — `{ priority: "high", sound: "incoming_order.mp3", order }`
 - `order:status`
+- `queue:snapshot` — initial queue state on connection
 - `queue:update`
+- `queue:joined`, `queue:left`, `queue:status`, `queue:location`
+- `queue:position` — private position update for each driver
+- `queue:reordered` — emitted when FIFO ordering may have changed
 
 Use `GET /api/notifications/config` for client notification settings,
 `POST /api/notifications/devices` to register a push token, and

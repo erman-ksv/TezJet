@@ -7,6 +7,7 @@ import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { emitIncomingOrder, emitOrderUpdate, emitQueueUpdate } from "../utils/realtime";
 import { serializeOrder } from "../utils/serialize";
+import { calculateFixedFare, parseRouteStopCodes } from "../utils/fare";
 import { boundedInteger, optionalString, pickEnum, requiredString } from "../utils/validation";
 import { normalizeNaturalLanguageAddress } from "../services/geminiAddressService";
 
@@ -92,6 +93,9 @@ export async function createOrder(
     "C",
     "D",
   ] as const) as PickupPoint;
+  const requestedStops = parseRouteStopCodes(request.body?.route_stops);
+  const routeStopCodes = requestedStops.length > 0 ? requestedStops : [pickupPoint];
+  const fare = calculateFixedFare(routeStopCodes);
   const pickupAddressText = optionalString(
     request.body?.pickup_address,
     "pickup_address",
@@ -109,6 +113,8 @@ export async function createOrder(
     pickupPoint,
     pickupLocation: getPickupLocation(request),
     pickupAddress,
+    routeStops: fare.stops,
+    fare,
     destination: requiredString(request.body?.destination, "destination", 240),
     seats: boundedInteger(request.body?.seats ?? 1, "seats", 1, 8),
     status: "searching",
@@ -196,12 +202,18 @@ export function acceptOrder(request: Request, response: Response): void {
   if (seatLockExpiresAt) {
     setTimeout(() => {
       store.clearExpiredSeatLocks();
-      emitQueueUpdate(getSocket(request));
+      emitQueueUpdate(getSocket(request), {
+        type: "seat_lock_expired",
+        driverId,
+      });
     }, SEAT_LOCK_TTL_MS + 100);
   }
 
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request));
+  emitQueueUpdate(getSocket(request), {
+    type: "order_assigned",
+    driverId,
+  });
   response.json({
     message: translate(request.auth?.locale ?? "ru", "seatLocked"),
     order: serializeOrder(updated, true),
@@ -257,7 +269,10 @@ export function updateOrderStatus(request: Request, response: Response): void {
   }
 
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request));
+  emitQueueUpdate(getSocket(request), {
+    type: "order_released",
+    driverId,
+  });
   response.json({ order: serializeOrder(updated, true) });
 }
 
@@ -283,7 +298,10 @@ export function cancelOrder(request: Request, response: Response): void {
     });
   }
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request));
+  emitQueueUpdate(getSocket(request), {
+    type: "order_released",
+    driverId: order.driverId,
+  });
   response.json({ order: serializeOrder(updated, request.auth?.role === "driver") });
 }
 

@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { store } from "../store/memoryStore";
 import { AppError } from "../utils/errors";
 import { emitIncomingOrder } from "../utils/realtime";
+import { calculateFixedFare } from "../utils/fare";
 import { pickEnum, requiredString } from "../utils/validation";
 
 export function getNotificationConfig(_request: Request, response: Response): void {
@@ -54,6 +55,8 @@ export function testHighPriorityAlert(request: Request, response: Response): voi
     passengerPhone: "+70000000000",
     pickupPoint: "C",
     pickupLocation: { lat: 0, lng: 0, timestamp: Date.now() },
+    routeStops: calculateFixedFare(["C"]).stops,
+    fare: calculateFixedFare(["C"]),
     destination: "Test alert",
     seats: 1,
     status: "searching",

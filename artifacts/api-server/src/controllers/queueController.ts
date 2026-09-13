@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { store } from "../store/memoryStore";
 import type { Coordinates, DriverQueueStatus } from "../types/domain";
-import { PYATAK_ZONE } from "../utils/config";
+import { PYATAK_ZONE, REQUIRE_DRIVER_APPROVAL } from "../utils/config";
 import { distanceMeters } from "../utils/geo";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
@@ -28,6 +28,16 @@ function assertDriver(request: Request): string {
       403,
       translate(request.auth?.locale ?? "ru", "driverOnly"),
       "DRIVER_ONLY",
+    );
+  }
+  if (
+    REQUIRE_DRIVER_APPROVAL &&
+    request.auth.user.driverApprovalStatus !== "approved"
+  ) {
+    throw new AppError(
+      403,
+      "Driver approval is required before joining the queue",
+      "DRIVER_NOT_APPROVED",
     );
   }
   return request.auth.userId;
@@ -135,6 +145,20 @@ export function updateQueueStatus(request: Request, response: Response): void {
     "status",
     ["searching", "picking_up", "en_route_to_c", "arrived_at_c", "in_transit"] as const,
   ) as DriverQueueStatus;
+  const current = store.getQueueEntry(driverId);
+  if (!current) {
+    throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
+  }
+  const allowedTransitions: Record<DriverQueueStatus, readonly DriverQueueStatus[]> = {
+    searching: ["picking_up", "in_transit"],
+    picking_up: ["searching", "en_route_to_c"],
+    en_route_to_c: ["arrived_at_c", "searching"],
+    arrived_at_c: ["in_transit", "searching"],
+    in_transit: ["searching", "in_transit"],
+  };
+  if (!allowedTransitions[current.status].includes(status)) {
+    throw new AppError(409, "Invalid queue status transition", "INVALID_QUEUE_STATUS");
+  }
   const entry = store.updateQueueEntry(driverId, {
     status,
     priorityLock:

@@ -5,6 +5,7 @@ import { estimateFare, listFareStops } from "../controllers/fareController";
 const router: IRouter = Router();
 
 router.get("/fares/stops", authenticate, listFareStops);
+router.get("/fares/routes", authenticate, listFareStops);
 router.post("/fares/estimate", authenticate, estimateFare);
 
 export default router;

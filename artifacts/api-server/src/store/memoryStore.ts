@@ -3,10 +3,13 @@ import type {
   Coordinates,
   DeviceRegistration,
   DriverQueueStatus,
+  DriverApprovalStatus,
   Locale,
   Order,
   OrderStatus,
   OtpChallenge,
+  RouteDefinition,
+  RouteStop,
   QueueEntry,
   User,
   UserRole,
@@ -19,6 +22,24 @@ class MemoryStore {
   private readonly queueEntries = new Map<string, QueueEntry>();
   private readonly orders = new Map<string, Order>();
   private readonly deviceRegistrations = new Map<string, DeviceRegistration>();
+  private readonly routes = new Map<string, RouteDefinition>();
+
+  constructor() {
+    const now = new Date().toISOString();
+    this.routes.set("pyatak", {
+      id: "pyatak",
+      name: "Pyatak",
+      currency: "KZT",
+      pricePerStopKzt: 500,
+      active: true,
+      stops: [
+        { id: "pyatak-stop-c", code: "C", name: "Point C", sequence: 1, position: 1 },
+        { id: "pyatak-stop-d", code: "D", name: "Point D", sequence: 2, position: 2 },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 
   createUser(input: {
     role: UserRole;
@@ -34,6 +55,7 @@ class MemoryStore {
       locale: input.locale,
       profileLocked: true,
       sessionVersion: 0,
+      driverApprovalStatus: input.role === "driver" ? "approved" : undefined,
       createdAt: new Date().toISOString(),
     };
     this.users.set(user.id, user);
@@ -166,6 +188,129 @@ class MemoryStore {
     return [...this.orders.values()].sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt),
     );
+  }
+
+  listUsers(role?: User["role"]): User[] {
+    return [...this.users.values()].filter((user) => !role || user.role === role);
+  }
+
+  setDriverApproval(
+    userId: string,
+    status: DriverApprovalStatus,
+  ): User | undefined {
+    const user = this.users.get(userId);
+    if (!user || user.role !== "driver") {
+      return undefined;
+    }
+    user.driverApprovalStatus = status;
+    return user;
+  }
+
+  listRoutes(): RouteDefinition[] {
+    return [...this.routes.values()].map((route) => ({
+      ...route,
+      stops: route.stops.map((stop) => ({ ...stop })),
+    }));
+  }
+
+  getRoute(routeId: string): RouteDefinition | undefined {
+    const route = this.routes.get(routeId);
+    return route
+      ? { ...route, stops: route.stops.map((stop) => ({ ...stop })) }
+      : undefined;
+  }
+
+  createRoute(input: {
+    id: string;
+    name: string;
+    pricePerStopKzt: number;
+    active: boolean;
+  }): RouteDefinition {
+    if (this.routes.has(input.id)) {
+      throw new Error(`Route ${input.id} already exists`);
+    }
+    const now = new Date().toISOString();
+    const route: RouteDefinition = {
+      id: input.id,
+      name: input.name,
+      currency: "KZT",
+      pricePerStopKzt: input.pricePerStopKzt,
+      active: input.active,
+      stops: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.routes.set(route.id, route);
+    return this.getRoute(route.id) as RouteDefinition;
+  }
+
+  updateRoute(
+    routeId: string,
+    patch: Partial<Pick<RouteDefinition, "name" | "pricePerStopKzt" | "active">>,
+  ): RouteDefinition | undefined {
+    const route = this.routes.get(routeId);
+    if (!route) {
+      return undefined;
+    }
+    Object.assign(route, patch, { updatedAt: new Date().toISOString() });
+    return this.getRoute(routeId);
+  }
+
+  deleteRoute(routeId: string): boolean {
+    return this.routes.delete(routeId);
+  }
+
+  addRouteStop(
+    routeId: string,
+    input: { code: string; name: string; sequence?: number; position?: number },
+  ): RouteStop | undefined {
+    const route = this.routes.get(routeId);
+    if (!route) {
+      return undefined;
+    }
+    const sequence = input.sequence ?? route.stops.length + 1;
+    const position = input.position ?? sequence;
+    const stop: RouteStop = {
+      id: randomUUID(),
+      code: input.code,
+      name: input.name,
+      sequence,
+      position,
+    };
+    route.stops.push(stop);
+    route.stops.sort((a, b) => a.sequence - b.sequence);
+    route.updatedAt = new Date().toISOString();
+    return { ...stop };
+  }
+
+  updateRouteStop(
+    routeId: string,
+    stopId: string,
+    patch: Partial<Pick<RouteStop, "code" | "name" | "sequence" | "position">>,
+  ): RouteStop | undefined {
+    const route = this.routes.get(routeId);
+    const stop = route?.stops.find((candidate) => candidate.id === stopId);
+    if (!route || !stop) {
+      return undefined;
+    }
+    Object.assign(stop, patch);
+    route.stops.sort((a, b) => a.sequence - b.sequence);
+    route.updatedAt = new Date().toISOString();
+    return { ...stop };
+  }
+
+  deleteRouteStop(routeId: string, stopId: string): boolean {
+    const route = this.routes.get(routeId);
+    if (!route) {
+      return false;
+    }
+    const originalLength = route.stops.length;
+    route.stops = route.stops.filter((stop) => stop.id !== stopId);
+    if (route.stops.length === originalLength) {
+      return false;
+    }
+    route.updatedAt = new Date().toISOString();
+    return true;
   }
 
   saveDeviceRegistration(

@@ -9,6 +9,11 @@ export const QUEUE_GEOFENCE_METERS = Number(
 );
 export const MAX_SPEED_KMH = 180;
 export const SEAT_LOCK_TTL_MS = 7 * 60 * 1000;
+export const ADMIN_PHONE = process.env.ADMIN_PHONE
+  ? process.env.ADMIN_PHONE.replace(/[^\d+]/g, "")
+  : undefined;
+export const REQUIRE_DRIVER_APPROVAL =
+  process.env.REQUIRE_DRIVER_APPROVAL === "true";
 export const PYATAK_ZONE = {
   id: "pyatak",
   name: "Pyatak",

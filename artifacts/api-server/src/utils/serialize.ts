@@ -9,6 +9,7 @@ export function serializeUser(user: User) {
     phone_number: user.phoneNumber,
     locale: user.locale,
     profile_locked: user.profileLocked,
+    driver_approval_status: user.driverApprovalStatus,
     created_at: user.createdAt,
   };
 }

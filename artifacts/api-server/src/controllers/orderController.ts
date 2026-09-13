@@ -7,7 +7,7 @@ import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { emitIncomingOrder, emitOrderUpdate, emitQueueUpdate } from "../utils/realtime";
 import { serializeOrder } from "../utils/serialize";
-import { calculateFixedFare, parseRouteStopCodes } from "../utils/fare";
+import { calculateRouteFare, parseRouteStopCodes } from "../utils/fare";
 import { boundedInteger, optionalString, pickEnum, requiredString } from "../utils/validation";
 import { normalizeNaturalLanguageAddress } from "../services/geminiAddressService";
 
@@ -94,8 +94,12 @@ export async function createOrder(
     "D",
   ] as const) as PickupPoint;
   const requestedStops = parseRouteStopCodes(request.body?.route_stops);
-  const routeStopCodes = requestedStops.length > 0 ? requestedStops : [pickupPoint];
-  const fare = calculateFixedFare(routeStopCodes);
+  const fare = calculateRouteFare({
+    routeId: request.body?.route_id,
+    pickupStop: request.body?.pickup_stop ?? pickupPoint,
+    destinationStop: request.body?.destination_stop,
+    routeStops: requestedStops.length > 0 ? requestedStops : undefined,
+  });
   const pickupAddressText = optionalString(
     request.body?.pickup_address,
     "pickup_address",

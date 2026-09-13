@@ -7,10 +7,10 @@ import { normalizePhone } from "../utils/phone";
 import { serializeUser } from "../utils/serialize";
 import { translate } from "../utils/i18n";
 import { AppError } from "../utils/errors";
-import { OTP_TTL_MS } from "../utils/config";
+import { ADMIN_PHONE, OTP_TTL_MS } from "../utils/config";
 import { optionalString, pickEnum, requiredString } from "../utils/validation";
 
-const roles = ["passenger", "driver"] as const;
+const roles = ["passenger", "driver", "admin"] as const;
 const locales = ["kk", "uz", "ru"] as const;
 
 function getLocale(request: Request, value: unknown): Locale {
@@ -31,6 +31,12 @@ function issueToken(userId: string): string {
 export function requestOtp(request: Request, response: Response): void {
   const phoneNumber = normalizePhone(requiredString(request.body?.phone_number, "phone_number", 32));
   const role = pickEnum(request.body?.role ?? "passenger", "role", roles);
+  if (
+    role === "admin" &&
+    (!ADMIN_PHONE || phoneNumber !== normalizePhone(ADMIN_PHONE))
+  ) {
+    throw new AppError(403, "Admin registration is not available", "ADMIN_REGISTRATION_DISABLED");
+  }
   const locale = getLocale(request, request.body?.locale);
   const fullName = optionalString(request.body?.full_name, "full_name", 120);
   const code = String(randomInt(100000, 1_000_000));
@@ -68,6 +74,8 @@ export function verifyOtp(request: Request, response: Response): void {
       phoneNumber,
       locale: challenge.locale,
     });
+  } else if (user.role !== challenge.role && challenge.role === "admin") {
+    throw new AppError(403, "Admin role cannot be assigned to this account", "ADMIN_ROLE_FORBIDDEN");
   }
 
   const token = issueToken(user.id);

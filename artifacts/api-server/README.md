@@ -53,11 +53,14 @@ multi-instance workers.
 - `POST /api/queue/join` — driver joins within the configured Pyatak geofence.
 - `PATCH /api/queue/location` — location update checked by anti-fake GPS middleware.
 - `PATCH /api/queue/status` — `searching`, `picking_up`, `en_route_to_c`, `arrived_at_c`, `in_transit`.
-- `GET /api/fares/stops` — fixed Pyatak route-stop catalog and prices.
-- `POST /api/fares/estimate` — calculate a fixed fare from `{ "route_stops": ["C", "D"] }`.
+- `GET /api/fares/stops?route_id=pyatak` — route-stop catalog and `price_per_stop`.
+- `POST /api/fares/estimate` — calculate
+  `ceil(abs(destination_position - pickup_position)) * price_per_stop`.
+  It accepts `{ "route_id": "pyatak", "pickup_stop": "C",
+  "destination_stop": "D" }` or the legacy `{ "route_stops": ["C", "D"] }`.
 - `POST /api/orders` — passenger creates a Point C or Point D order. Optional
-  `route_stops` uses the same fixed catalog; when omitted, the pickup point is
-  used as the single stop.
+  `route_stops` uses the same route catalog; when omitted, the pickup point is
+  used as the pickup and destination stop, with a minimum one-stop fare.
 - `POST /api/orders/:orderId/accept` — #1 driver accepts; Point C gets a 7-minute seat lock.
 - `PATCH /api/orders/:orderId/status` — driver advances `en_route_to_c` → `arrived_at_c` → `in_transit` → `completed`.
 - `POST /api/orders/:orderId/cancel` — passenger or assigned driver cancels.
@@ -65,11 +68,22 @@ multi-instance workers.
 Point D orders are offered to the first in-transit driver with enough seats.
 Driver-facing order responses mask passenger phone numbers.
 
-The default fixed prices are Point C — 500 KZT and Point D — 700 KZT. They
-can be replaced at startup with `PYATAK_ROUTE_STOP_PRICES`, a JSON array such
-as `[{"code":"C","name":"Point C","priceKzt":500}]`. The Pyatak center and
-radius can be configured with `PYATAK_CENTER_LAT`, `PYATAK_CENTER_LNG`, and
-`PYATAK_GEOFENCE_METERS`.
+The default route has two stops, Point C and Point D, and a price of 500 KZT
+per stop. Admins can change the price and stops at runtime through `/api/admin`.
+Set `REQUIRE_DRIVER_APPROVAL=true` to block unapproved drivers from joining
+the queue. Admin OTP registration is enabled only when `ADMIN_PHONE` is set.
+
+### Admin API
+
+Admin JWTs can manage the route catalog:
+
+- `GET|POST /api/admin/routes`
+- `PATCH|DELETE /api/admin/routes/:routeId`
+- `POST /api/admin/routes/:routeId/stops`
+- `PATCH|DELETE /api/admin/routes/:routeId/stops/:stopId`
+- `GET /api/admin/drivers`
+- `PATCH /api/admin/drivers/:driverId/approval` with
+  `{ "status": "pending|approved|rejected" }`
 
 ## Realtime and push-ready events
 

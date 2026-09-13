@@ -1,18 +1,28 @@
 import type { Request, Response } from "express";
-import { calculateFixedFare, getRouteStops, parseRouteStopCodes } from "../utils/fare";
+import { calculateRouteFare, getRouteStops, parseRouteStopCodes } from "../utils/fare";
+import { store } from "../store/memoryStore";
 
 export function listFareStops(_request: Request, response: Response): void {
+  const routeId = typeof _request.query.route_id === "string"
+    ? _request.query.route_id
+    : "pyatak";
   response.json({
-    zone: "pyatak",
+    route_id: routeId,
     currency: "KZT",
-    stops: getRouteStops(),
+    price_per_stop: store.getRoute(routeId)?.pricePerStopKzt,
+    stops: getRouteStops(routeId),
   });
 }
 
 export function estimateFare(request: Request, response: Response): void {
   const stopCodes = parseRouteStopCodes(request.body?.route_stops);
   response.json({
-    zone: "pyatak",
-    fare: calculateFixedFare(stopCodes),
+    route_id: request.body?.route_id ?? "pyatak",
+    fare: calculateRouteFare({
+      routeId: request.body?.route_id,
+      pickupStop: request.body?.pickup_stop,
+      destinationStop: request.body?.destination_stop,
+      routeStops: stopCodes.length > 0 ? stopCodes : undefined,
+    }),
   });
 }

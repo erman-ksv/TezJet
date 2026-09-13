@@ -6,6 +6,7 @@ import orderRouter from "./order";
 import notificationRouter from "./notifications";
 import addressRouter from "./address";
 import fareRouter from "./fare";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(orderRouter);
 router.use(notificationRouter);
 router.use(addressRouter);
 router.use(fareRouter);
+router.use(adminRouter);
 
 export default router;

@@ -1,4 +1,4 @@
-export type UserRole = "passenger" | "driver";
+export type UserRole = "passenger" | "driver" | "admin";
 export type Locale = "kk" | "uz" | "ru";
 export type PickupPoint = "C" | "D";
 export type OrderStatus =
@@ -14,6 +14,7 @@ export type DriverQueueStatus =
   | "en_route_to_c"
   | "arrived_at_c"
   | "in_transit";
+export type DriverApprovalStatus = "pending" | "approved" | "rejected";
 
 export interface Coordinates {
   lat: number;
@@ -40,13 +41,34 @@ export interface NormalizedAddress {
 }
 
 export interface RouteStop {
+  id: string;
   code: string;
   name: string;
-  priceKzt: number;
+  sequence: number;
+  position: number;
+}
+
+export interface RouteDefinition {
+  id: string;
+  name: string;
+  currency: "KZT";
+  pricePerStopKzt: number;
+  active: boolean;
+  stops: RouteStop[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface FareQuote {
   currency: "KZT";
+  routeId: string;
+  pickupStop: RouteStop;
+  destinationStop: RouteStop;
+  pickupPosition: number;
+  destinationPosition: number;
+  distanceStops: number;
+  pricePerStopKzt: number;
+  minimumFareApplied: boolean;
   stops: RouteStop[];
   totalKzt: number;
   calculatedAt: string;
@@ -60,6 +82,7 @@ export interface User {
   locale: Locale;
   profileLocked: boolean;
   sessionVersion: number;
+  driverApprovalStatus?: DriverApprovalStatus;
   lastLocation?: Coordinates;
   createdAt: string;
 }

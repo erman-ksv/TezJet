@@ -1,0 +1,1 @@
+- [Route fare compatibility](route-fare-compatibility.md) — retain legacy stop-array inputs while using admin-managed snapped route positions for fare calculation.

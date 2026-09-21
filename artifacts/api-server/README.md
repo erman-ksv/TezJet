@@ -34,6 +34,20 @@ in-memory adapter is intentional for a runnable API scaffold; replace
 `src/store/memoryStore.ts` with a PostgreSQL/Redis adapter when deploying
 multi-instance workers.
 
+## Release scenario checks
+
+Run the API regression scenarios from the workspace root:
+
+```bash
+pnpm test
+```
+
+The check builds the API, starts an isolated test server, and verifies OTP
+registration and login session invalidation, FIFO driver queue behavior, Point
+C seat locks and status transitions, Point D pooling, and Socket.io realtime
+events. It uses development OTP responses and does not require external
+services.
+
 ## Authentication
 
 1. `POST /api/auth/request-otp`

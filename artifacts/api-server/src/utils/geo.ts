@@ -18,6 +18,14 @@ export function distanceMeters(a: Coordinates, b: Coordinates): number {
   );
 }
 
+export function isWithinRadius(
+  point: Coordinates,
+  center: Coordinates,
+  radiusMeters: number,
+): boolean {
+  return distanceMeters(point, center) <= radiusMeters;
+}
+
 export function speedKmh(
   previous: Coordinates,
   current: Coordinates,

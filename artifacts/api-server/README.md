@@ -98,6 +98,14 @@ Admin JWTs can manage the route catalog:
 - `GET /api/admin/drivers`
 - `PATCH /api/admin/drivers/:driverId/approval` with
   `{ "status": "pending|approved|rejected" }`
+- `GET /api/admin/queue-point` — read the current Pyatak center and 150-meter geofence.
+- `PATCH /api/admin/queue-point` — update the center from the admin panel with
+  `{ "lat": 41.3111, "lng": 69.2797 }` or `{ "center": { "lat": 41.3111, "lng": 69.2797 } }`.
+
+The queue point update requires an admin JWT. Coordinates are validated before
+being applied, and the new center is used immediately by driver queue joins,
+location updates, queue status responses, and realtime queue events. The current
+in-memory adapter keeps this setting until the API process restarts.
 
 ## Realtime and push-ready events
 

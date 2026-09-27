@@ -5,9 +5,11 @@ import {
   createRoute,
   deleteRoute,
   deleteStop,
+  getQueuePoint,
   listDrivers,
   listRoutes,
   updateDriverApproval,
+  updateQueuePoint,
   updateRoute,
   updateStop,
 } from "../controllers/adminController";
@@ -23,6 +25,8 @@ router.post("/admin/routes/:routeId/stops", ...adminOnly, addStop);
 router.patch("/admin/routes/:routeId/stops/:stopId", ...adminOnly, updateStop);
 router.delete("/admin/routes/:routeId/stops/:stopId", ...adminOnly, deleteStop);
 router.get("/admin/drivers", ...adminOnly, listDrivers);
+router.get("/admin/queue-point", ...adminOnly, getQueuePoint);
+router.patch("/admin/queue-point", ...adminOnly, updateQueuePoint);
 router.patch(
   "/admin/drivers/:driverId/approval",
   ...adminOnly,

@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { store } from "../store/memoryStore";
 import type { DriverApprovalStatus } from "../types/domain";
+import { PYATAK_ZONE, updatePyatakCenter } from "../utils/config";
+import { isValidCoordinates } from "../utils/geo";
 import { AppError } from "../utils/errors";
 import { serializeUser } from "../utils/serialize";
 import { boundedInteger, optionalString, pickEnum, requiredString } from "../utils/validation";
@@ -22,6 +24,55 @@ function optionalBoolean(value: unknown, field: string, fallback: boolean): bool
     throw new AppError(400, `${field} must be a boolean`, "VALIDATION_ERROR");
   }
   return value;
+}
+
+function readCenter(request: Request): {
+  lat: number;
+  lng: number;
+  timestamp: number;
+} {
+  const source =
+    request.body?.center && typeof request.body.center === "object"
+      ? request.body.center
+      : request.body;
+  const input = source as Record<string, unknown> | undefined;
+  const center = {
+    lat: Number(input?.lat),
+    lng: Number(input?.lng),
+    timestamp: Date.now(),
+  };
+  if (!isValidCoordinates(center)) {
+    throw new AppError(
+      400,
+      "lat and lng must be valid coordinates",
+      "INVALID_COORDINATES",
+    );
+  }
+  return center;
+}
+
+function serializeQueuePoint() {
+  return {
+    id: PYATAK_ZONE.id,
+    name: PYATAK_ZONE.name,
+    center: { ...PYATAK_ZONE.center },
+    geofence_meters: PYATAK_ZONE.radiusMeters,
+  };
+}
+
+export function getQueuePoint(_request: Request, response: Response): void {
+  response.json({ queue_point: serializeQueuePoint() });
+}
+
+export function updateQueuePoint(request: Request, response: Response): void {
+  const center = updatePyatakCenter(readCenter(request));
+  response.json({
+    message: "Queue point updated",
+    queue_point: {
+      ...serializeQueuePoint(),
+      center,
+    },
+  });
 }
 
 export function listRoutes(_request: Request, response: Response): void {

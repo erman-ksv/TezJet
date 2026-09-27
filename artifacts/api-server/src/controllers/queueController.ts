@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { store } from "../store/memoryStore";
 import type { Coordinates, DriverQueueStatus } from "../types/domain";
 import { PYATAK_ZONE, REQUIRE_DRIVER_APPROVAL } from "../utils/config";
-import { distanceMeters } from "../utils/geo";
+import { isWithinRadius } from "../utils/geo";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { emitQueueUpdate } from "../utils/realtime";
@@ -63,8 +63,7 @@ export function getQueueStatus(request: Request, response: Response): void {
 export function joinQueue(request: Request, response: Response): void {
   const driverId = assertDriver(request);
   const location = getLocation(request);
-  const distance = distanceMeters(PYATAK_ZONE.center, location);
-  if (distance > PYATAK_ZONE.radiusMeters) {
+  if (!isWithinRadius(location, PYATAK_ZONE.center, PYATAK_ZONE.radiusMeters)) {
     throw new AppError(
       422,
       translate(request.auth?.locale ?? "ru", "outsideGeofence"),
@@ -122,8 +121,10 @@ export function updateQueueLocation(request: Request, response: Response): void 
   if (!current) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
-  const distance = distanceMeters(PYATAK_ZONE.center, location);
-  if (current.status === "searching" && distance > PYATAK_ZONE.radiusMeters) {
+  if (
+    current.status === "searching" &&
+    !isWithinRadius(location, PYATAK_ZONE.center, PYATAK_ZONE.radiusMeters)
+  ) {
     throw new AppError(
       422,
       translate(request.auth?.locale ?? "ru", "outsideGeofence"),

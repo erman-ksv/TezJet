@@ -14,7 +14,12 @@ export const ADMIN_PHONE = process.env.ADMIN_PHONE
   : undefined;
 export const REQUIRE_DRIVER_APPROVAL =
   process.env.REQUIRE_DRIVER_APPROVAL === "true";
-export const PYATAK_ZONE = {
+export const PYATAK_ZONE: {
+  id: string;
+  name: string;
+  radiusMeters: number;
+  center: Coordinates;
+} = {
   id: "pyatak",
   name: "Pyatak",
   radiusMeters: QUEUE_GEOFENCE_METERS,
@@ -26,8 +31,17 @@ export const PYATAK_ZONE = {
       process.env.PYATAK_CENTER_LNG ?? process.env.QUEUE_CENTER_LNG ?? 69.2797,
     ),
     timestamp: Date.now(),
-  } satisfies Coordinates,
-} as const;
+  },
+};
+
+export function updatePyatakCenter(center: Coordinates): Coordinates {
+  PYATAK_ZONE.center = {
+    ...center,
+    timestamp: Date.now(),
+  };
+  return { ...PYATAK_ZONE.center };
+}
+
 export const DEFAULT_QUEUE_POINT: Coordinates = {
   ...PYATAK_ZONE.center,
   timestamp: Date.now(),

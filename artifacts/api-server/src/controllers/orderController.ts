@@ -179,7 +179,12 @@ export function acceptOrder(request: Request, response: Response): void {
 
   const queueEntry = store.getQueueEntry(driverId);
   const position = store.getQueuePosition(driverId);
-  if (!queueEntry || position !== 1) {
+  const isActivePoolOffer =
+    order.pickupPoint === "D" &&
+    order.offeredDriverId === driverId &&
+    queueEntry?.inFifo === false &&
+    queueEntry.status === "in_transit";
+  if (!queueEntry || (!isActivePoolOffer && position !== 1)) {
     throw new AppError(409, "Only the first driver in the queue can accept this order", "FIFO_REQUIRED");
   }
   if (queueEntry.availableSeats < order.seats) {
@@ -196,11 +201,23 @@ export function acceptOrder(request: Request, response: Response): void {
     seatLockExpiresAt,
   }) as Order;
 
+  const activeOrderIds = [
+    ...(queueEntry.activeOrderIds ??
+      (queueEntry.currentOrderId ? [queueEntry.currentOrderId] : [])),
+    order.id,
+  ];
+  const remainingSeats = queueEntry.availableSeats - order.seats;
+  const staysInFifo =
+    queueEntry.inFifo !== false &&
+    status !== "in_transit" &&
+    remainingSeats > 0;
   store.updateQueueEntry(driverId, {
     status: order.pickupPoint === "C" ? "en_route_to_c" : "in_transit",
     priorityLock: true,
     currentOrderId: order.id,
-    availableSeats: queueEntry.availableSeats - order.seats,
+    activeOrderIds: [...new Set(activeOrderIds)],
+    inFifo: staysInFifo,
+    availableSeats: remainingSeats,
     seatLockExpiresAt,
   });
   if (seatLockExpiresAt) {
@@ -257,19 +274,40 @@ export function updateOrderStatus(request: Request, response: Response): void {
     store.updateQueueEntry(driverId, {
       status: "in_transit",
       priorityLock: true,
+      inFifo: false,
       seatLockExpiresAt: undefined,
     });
   } else if (nextStatus === "completed" || nextStatus === "cancelled") {
     const entry = store.getQueueEntry(driverId);
-    store.updateQueueEntry(driverId, {
-      status: "searching",
-      priorityLock: false,
-      currentOrderId: undefined,
-      seatLockExpiresAt: undefined,
-      availableSeats: entry
-        ? entry.availableSeats + (nextStatus === "completed" ? order.seats : 0)
-        : undefined,
-    });
+    if (entry) {
+      const activeOrderIds = (
+        entry.activeOrderIds ??
+        (entry.currentOrderId ? [entry.currentOrderId] : [])
+      ).filter((orderId) => orderId !== order.id);
+      const availableSeats = entry.availableSeats + order.seats;
+      store.updateQueueEntry(
+        driverId,
+        activeOrderIds.length > 0
+          ? {
+              status: "in_transit",
+              priorityLock: true,
+              inFifo: false,
+              activeOrderIds,
+              currentOrderId: activeOrderIds[0],
+              seatLockExpiresAt: undefined,
+              availableSeats,
+            }
+          : {
+              status: "searching",
+              priorityLock: false,
+              inFifo: true,
+              activeOrderIds: [],
+              currentOrderId: undefined,
+              seatLockExpiresAt: undefined,
+              availableSeats,
+            },
+      );
+    }
   }
 
   emitOrderUpdate(getSocket(request), updated);
@@ -293,13 +331,35 @@ export function cancelOrder(request: Request, response: Response): void {
   }) as Order;
   if (order.driverId) {
     const entry = store.getQueueEntry(order.driverId);
-    store.updateQueueEntry(order.driverId, {
-      status: "searching",
-      priorityLock: false,
-      currentOrderId: undefined,
-      seatLockExpiresAt: undefined,
-      availableSeats: entry ? entry.availableSeats + order.seats : undefined,
-    });
+    if (entry) {
+      const activeOrderIds = (
+        entry.activeOrderIds ??
+        (entry.currentOrderId ? [entry.currentOrderId] : [])
+      ).filter((orderId) => orderId !== order.id);
+      const availableSeats = entry.availableSeats + order.seats;
+      store.updateQueueEntry(
+        order.driverId,
+        activeOrderIds.length > 0
+          ? {
+              status: "in_transit",
+              priorityLock: true,
+              inFifo: false,
+              activeOrderIds,
+              currentOrderId: activeOrderIds[0],
+              seatLockExpiresAt: undefined,
+              availableSeats,
+            }
+          : {
+              status: "searching",
+              priorityLock: false,
+              inFifo: true,
+              activeOrderIds: [],
+              currentOrderId: undefined,
+              seatLockExpiresAt: undefined,
+              availableSeats,
+            },
+      );
+    }
   }
   emitOrderUpdate(getSocket(request), updated);
   emitQueueUpdate(getSocket(request), {

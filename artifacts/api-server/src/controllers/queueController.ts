@@ -78,6 +78,13 @@ export function joinQueue(request: Request, response: Response): void {
     8,
   );
   const existing = store.getQueueEntry(driverId);
+  if (existing && existing.inFifo === false) {
+    throw new AppError(
+      409,
+      "Driver is already on an active route",
+      "ACTIVE_ROUTE",
+    );
+  }
   const entry = store.joinQueue({
     driverId,
     joinedAt: existing?.joinedAt ?? Date.now(),
@@ -85,6 +92,8 @@ export function joinQueue(request: Request, response: Response): void {
     availableSeats,
     lastLocation: location,
     priorityLock: existing?.priorityLock ?? false,
+    inFifo: true,
+    activeOrderIds: existing?.activeOrderIds,
     currentOrderId: existing?.currentOrderId,
     seatLockExpiresAt: existing?.seatLockExpiresAt,
   });
@@ -167,6 +176,12 @@ export function updateQueueStatus(request: Request, response: Response): void {
       status === "en_route_to_c" ||
       status === "arrived_at_c" ||
       status === "in_transit",
+    inFifo:
+      status === "in_transit"
+        ? false
+        : status === "searching"
+          ? true
+          : current.inFifo !== false,
   });
   if (!entry) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");

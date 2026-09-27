@@ -274,7 +274,15 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
     const entry = queue.body.queue.find(
       (candidate) => candidate.driverId === firstJoin.body.entry.driverId,
     );
-    assert.equal(entry.status, expectedQueueStatus);
+    if (status === "in_transit") {
+      assert.equal(
+        entry,
+        undefined,
+        "a driver who started moving must leave the FIFO queue",
+      );
+    } else {
+      assert.equal(entry.status, expectedQueueStatus);
+    }
   }
 
   const transitOrder = await createOrder(passengerLoginToken, "C", 1);

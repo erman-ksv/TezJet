@@ -107,6 +107,28 @@ class MemoryStore {
     return this.queueEntries.get(driverId);
   }
 
+  /**
+   * Redis equivalent: remove the driver from the FIFO sorted set while
+   * retaining the active-trip record for pooled orders.
+   */
+  removeDriverFromFifo(driverId: string): QueueEntry | undefined {
+    const entry = this.queueEntries.get(driverId);
+    if (!entry) {
+      return undefined;
+    }
+    entry.inFifo = false;
+    return entry;
+  }
+
+  returnDriverToFifo(driverId: string): QueueEntry | undefined {
+    const entry = this.queueEntries.get(driverId);
+    if (!entry) {
+      return undefined;
+    }
+    entry.inFifo = true;
+    return entry;
+  }
+
   joinQueue(entry: QueueEntry): QueueEntry {
     this.queueEntries.set(entry.driverId, entry);
     return entry;
@@ -130,6 +152,7 @@ class MemoryStore {
 
   getQueue(): QueueEntry[] {
     return [...this.queueEntries.values()]
+      .filter((entry) => entry.inFifo !== false)
       .filter((entry) => !entry.seatLockExpiresAt || entry.seatLockExpiresAt > Date.now())
       .sort((a, b) => {
         if (a.priorityLock !== b.priorityLock) {
@@ -145,11 +168,14 @@ class MemoryStore {
   }
 
   getFirstEligibleDriver(seats: number): QueueEntry | undefined {
-    return this.getQueue().find(
+    return [...this.queueEntries.values()].find(
       (entry) =>
         entry.status === "in_transit" &&
         entry.availableSeats >= seats &&
-        Boolean(entry.currentOrderId),
+        Boolean(
+          entry.currentOrderId ||
+            (entry.activeOrderIds && entry.activeOrderIds.length > 0),
+        ),
     );
   }
 
@@ -346,13 +372,32 @@ class MemoryStore {
         if (driverId) {
           const entry = this.queueEntries.get(driverId);
           if (entry) {
-            Object.assign(entry, {
-              status: "searching",
-              priorityLock: false,
-              currentOrderId: undefined,
-              seatLockExpiresAt: undefined,
-              availableSeats: entry.availableSeats + order.seats,
-            });
+            const activeOrderIds = (
+              entry.activeOrderIds ??
+              (entry.currentOrderId ? [entry.currentOrderId] : [])
+            ).filter((orderId) => orderId !== order.id);
+            Object.assign(
+              entry,
+              activeOrderIds.length > 0
+                ? {
+                    status: "in_transit",
+                    priorityLock: true,
+                    inFifo: false,
+                    activeOrderIds,
+                    currentOrderId: activeOrderIds[0],
+                    seatLockExpiresAt: undefined,
+                    availableSeats: entry.availableSeats + order.seats,
+                  }
+                : {
+                    status: "searching",
+                    priorityLock: false,
+                    inFifo: true,
+                    activeOrderIds: [],
+                    currentOrderId: undefined,
+                    seatLockExpiresAt: undefined,
+                    availableSeats: entry.availableSeats + order.seats,
+                  },
+            );
           }
         }
         order.seatLockExpiresAt = undefined;

@@ -107,6 +107,19 @@ being applied, and the new center is used immediately by driver queue joins,
 location updates, queue status responses, and realtime queue events. The current
 in-memory adapter keeps this setting until the API process restarts.
 
+## FIFO queue and active-trip pooling
+
+When a driver accepts an order that uses all remaining seats, the driver is
+removed from the FIFO queue immediately. When the driver changes the order
+status to `in_transit` (the "Go" action), the driver is removed from FIFO even
+if seats remain available. The active-trip record keeps the remaining seats and
+active order IDs, so Point D pooling can offer new passengers to that driver
+without changing the FIFO order of drivers who are still waiting.
+
+The current runnable adapter models the Redis design with an `inFifo` flag on
+the queue entry. A Redis-backed adapter should map FIFO membership to a sorted
+set and keep active-trip entries in a separate collection.
+
 ## Realtime and push-ready events
 
 Socket.io connects to the same server with:

@@ -103,6 +103,9 @@ export interface QueueEntry {
   availableSeats: number;
   lastLocation: Coordinates;
   priorityLock: boolean;
+  /** False means the driver is in an active-trip pool, not the FIFO set. */
+  inFifo?: boolean;
+  activeOrderIds?: string[];
   currentOrderId?: string;
   seatLockExpiresAt?: number;
 }

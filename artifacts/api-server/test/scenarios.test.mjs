@@ -249,7 +249,7 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   const approachingLocation = {
     lat: 41.33,
     lng: 69.2797,
-    timestamp: Date.now(),
+    timestamp: Date.now() + 120_000,
   };
   const approachingUpdate = await request("/queue/location", {
     method: "PATCH",

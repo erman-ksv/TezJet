@@ -9,6 +9,7 @@ export const QUEUE_GEOFENCE_METERS = Number(
 );
 export const MAX_SPEED_KMH = 180;
 export const SEAT_LOCK_TTL_MS = 7 * 60 * 1000;
+export const DRIVER_OFFER_TTL_MS = Number(process.env.DRIVER_OFFER_TTL_MS ?? 30 * 1000);
 export const ADMIN_PHONE = process.env.ADMIN_PHONE
   ? process.env.ADMIN_PHONE.replace(/[^\d+]/g, "")
   : undefined;

@@ -7,6 +7,7 @@ import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { emitQueueUpdate } from "../utils/realtime";
 import { boundedInteger, pickEnum } from "../utils/validation";
+import { dispatchWaitingOrders } from "../services/orderDispatcher";
 
 function getLocation(request: Request): Coordinates {
   const raw = request.body?.location;
@@ -101,6 +102,7 @@ export function joinQueue(request: Request, response: Response): void {
     type: existing ? "reordered" : "joined",
     driverId,
   });
+  dispatchWaitingOrders(request.app.locals.io);
   response.status(201).json({
     message: translate(request.auth?.locale ?? "ru", "queueJoined"),
     entry,
@@ -145,6 +147,7 @@ export function updateQueueLocation(request: Request, response: Response): void 
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
   emitQueueUpdate(request.app.locals.io, { type: "location", driverId });
+  dispatchWaitingOrders(request.app.locals.io);
   response.json({ entry, position: store.getQueuePosition(driverId) });
 }
 
@@ -187,5 +190,8 @@ export function updateQueueStatus(request: Request, response: Response): void {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
   emitQueueUpdate(request.app.locals.io, { type: "status", driverId });
+  if (status === "searching" || status === "in_transit") {
+    dispatchWaitingOrders(request.app.locals.io);
+  }
   response.json({ entry, position: store.getQueuePosition(driverId) });
 }

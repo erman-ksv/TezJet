@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { after, before, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 import { io } from "socket.io-client";
 
 const port = 41_000 + (process.pid % 1_000);
 const baseUrl = `http://127.0.0.1:${port}/api`;
 const socketUrl = `http://127.0.0.1:${port}`;
+const offerTimeoutMs = 2_000;
 const queueLocation = {
   lat: 41.3111,
   lng: 69.2797,
@@ -131,9 +132,15 @@ async function loginUser(phoneNumber) {
   return login.body.access_token;
 }
 
-async function createOrder(token, pickupPoint, seats = 1) {
-  const pickupLocation = {
-    ...queueLocation,
+async function createOrderResponse(
+  token,
+  pickupPoint,
+  seats = 1,
+  routeStops = ["C", "D"],
+  pickupLocation = queueLocation,
+) {
+  const orderPickupLocation = {
+    ...pickupLocation,
     timestamp: Date.now(),
   };
   const result = await request("/orders", {
@@ -141,17 +148,57 @@ async function createOrder(token, pickupPoint, seats = 1) {
     token,
     body: {
       pickup_point: pickupPoint,
-      pickup_location: pickupLocation,
-      route_stops: ["C", "D"],
+      pickup_location: orderPickupLocation,
+      route_stops: routeStops,
       destination: `${pickupPoint} test destination`,
       seats,
     },
   });
   assert.equal(result.response.status, 201, JSON.stringify(result.body));
+  return result;
+}
+
+async function createOrder(token, pickupPoint, seats = 1, routeStops = ["C", "D"], pickupLocation = queueLocation) {
+  const result = await createOrderResponse(
+    token,
+    pickupPoint,
+    seats,
+    routeStops,
+    pickupLocation,
+  );
   return result.body.order;
 }
 
-before(async () => {
+async function joinQueue(token, availableSeats = 3, location = queueLocation) {
+  return request("/queue/join", {
+    method: "POST",
+    token,
+    body: {
+      location: { ...location, timestamp: Date.now() },
+      available_seats: availableSeats,
+    },
+  });
+}
+
+function assertNoSocketEvent(socket, event, predicate = () => true, durationMs = 150) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.off(event, onEvent);
+      resolve();
+    }, durationMs);
+    function onEvent(payload) {
+      if (!predicate(payload)) {
+        return;
+      }
+      clearTimeout(timer);
+      socket.off(event, onEvent);
+      reject(new Error(`Unexpected Socket.io event "${event}" before dispatch was allowed`));
+    }
+    socket.on(event, onEvent);
+  });
+}
+
+beforeEach(async () => {
   serverProcess = spawn(process.execPath, ["--enable-source-maps", "./dist/index.mjs"], {
     cwd: new URL("..", import.meta.url),
     env: {
@@ -159,19 +206,31 @@ before(async () => {
       NODE_ENV: "test",
       PORT: String(port),
       SESSION_SECRET: "tezjet-test-session-secret",
+      ORDER_OFFER_TIMEOUT_MS: String(offerTimeoutMs),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
   await waitForServer();
 });
 
-after(async () => {
+afterEach(async () => {
   for (const socket of sockets) {
     socket.disconnect();
   }
-  if (serverProcess && !serverProcess.killed) {
+  sockets.length = 0;
+  if (serverProcess && serverProcess.exitCode === null) {
+    const exited = new Promise((resolve) => serverProcess.once("exit", resolve));
     serverProcess.kill("SIGTERM");
+    let timer;
+    await Promise.race([
+      exited,
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, 2_000);
+      }),
+    ]);
+    clearTimeout(timer);
   }
+  serverProcess = undefined;
 });
 
 test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime events", async () => {
@@ -301,22 +360,341 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
     assert.equal(transition.body.order.status, status);
   }
 
-  const pointDIncoming = waitForSocketEvent(
-    driverOneSocket,
+  const pointDOrder = await createOrder(passengerLoginToken, "D", 2);
+  assert.equal(pointDOrder.status, "searching");
+  assert.equal(pointDOrder.offered_driver_id, secondJoin.body.entry.driverId);
+  const pointDOffer = await request(`/orders/${pointDOrder.id}/accept`, {
+    method: "POST",
+    token: driverTwoToken,
+  });
+  assert.equal(pointDOffer.response.status, 200);
+  assert.equal(pointDOffer.body.order.status, "in_transit");
+});
+
+test("offers to the first available FIFO driver, even when the second is closer", async () => {
+  const passengerToken = await registerUser("+7 777 200 00 01", "passenger", "Passenger");
+  const firstToken = await registerUser("+7 777 200 00 02", "driver", "FIFO One");
+  const secondToken = await registerUser("+7 777 200 00 03", "driver", "FIFO Two");
+  const firstSocket = await connectSocket(firstToken);
+  const secondSocket = await connectSocket(secondToken);
+  const firstIncoming = waitForSocketEvent(
+    firstSocket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "C",
+  );
+  const firstJoin = await joinQueue(firstToken, 3, {
+    lat: queueLocation.lat + 0.0005,
+    lng: queueLocation.lng,
+  });
+  assert.equal(firstJoin.body.position, 1);
+  const secondJoin = await joinQueue(secondToken, 3, queueLocation);
+  assert.equal(secondJoin.body.position, 2);
+
+  const result = await createOrderResponse(
+    passengerToken,
+    "C",
+    1,
+    ["C", "D"],
+    queueLocation,
+  );
+  assert.equal(result.body.offer.driver_id, firstJoin.body.entry.driverId);
+  assert.equal(result.body.offer.smart_pooling, false);
+  assert.equal((await firstIncoming).order.offered_driver_id, firstJoin.body.entry.driverId);
+  await assertNoSocketEvent(
+    secondSocket,
+    "incoming_order",
+    (payload) => payload.order?.id === result.body.order.id,
+  );
+
+  const accepted = await request(`/orders/${result.body.order.id}/accept`, {
+    method: "POST",
+    token: firstToken,
+  });
+  assert.equal(accepted.response.status, 200);
+});
+
+test("an explicit decline immediately offers the same order to the next FIFO driver", async () => {
+  const passengerToken = await registerUser("+7 777 210 00 01", "passenger", "Passenger");
+  const firstToken = await registerUser("+7 777 210 00 02", "driver", "FIFO One");
+  const secondToken = await registerUser("+7 777 210 00 03", "driver", "FIFO Two");
+  const firstSocket = await connectSocket(firstToken);
+  const secondSocket = await connectSocket(secondToken);
+  const firstIncoming = waitForSocketEvent(
+    firstSocket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "C",
+  );
+  const secondIncoming = waitForSocketEvent(
+    secondSocket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "C",
+  );
+  await joinQueue(firstToken);
+  const secondJoin = await joinQueue(secondToken);
+  const result = await createOrderResponse(passengerToken, "C");
+  const orderId = result.body.order.id;
+  await firstIncoming;
+  await assertNoSocketEvent(
+    secondSocket,
+    "incoming_order",
+    (payload) => payload.order?.id === orderId,
+  );
+
+  const declined = await request(`/orders/${orderId}/decline`, {
+    method: "POST",
+    token: firstToken,
+  });
+  assert.equal(declined.response.status, 200);
+  assert.equal(declined.body.order.status, "searching");
+  assert.equal(declined.body.offer.driver_id, secondJoin.body.entry.driverId);
+  assert.equal((await secondIncoming).order.id, orderId);
+});
+
+test("an unanswered FIFO offer expires before the next driver receives it", async () => {
+  const passengerToken = await registerUser("+7 777 220 00 01", "passenger", "Passenger");
+  const firstToken = await registerUser("+7 777 220 00 02", "driver", "FIFO One");
+  const secondToken = await registerUser("+7 777 220 00 03", "driver", "FIFO Two");
+  const firstSocket = await connectSocket(firstToken);
+  const secondSocket = await connectSocket(secondToken);
+  const firstIncoming = waitForSocketEvent(
+    firstSocket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "C",
+  );
+  const secondIncoming = waitForSocketEvent(
+    secondSocket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "C",
+  );
+  await joinQueue(firstToken);
+  const secondJoin = await joinQueue(secondToken);
+  const result = await createOrderResponse(passengerToken, "C");
+  const firstOffer = await firstIncoming;
+  await assertNoSocketEvent(
+    secondSocket,
+    "incoming_order",
+    (payload) => payload.order?.id === result.body.order.id,
+    200,
+  );
+  const secondOffer = await secondIncoming;
+  assert.equal(secondOffer.order.id, result.body.order.id);
+  assert.equal(secondOffer.order.offered_driver_id, secondJoin.body.entry.driverId);
+  assert.ok(
+    Date.parse(secondOffer.received_at) - Date.parse(firstOffer.received_at) >=
+      offerTimeoutMs - 100,
+    "the next offer must wait for the previous offer to expire",
+  );
+});
+
+test("a second FIFO driver cannot accept while the first driver's offer is active", async () => {
+  const passengerToken = await registerUser("+7 777 230 00 01", "passenger", "Passenger");
+  const firstToken = await registerUser("+7 777 230 00 02", "driver", "FIFO One");
+  const secondToken = await registerUser("+7 777 230 00 03", "driver", "FIFO Two");
+  const firstSocket = await connectSocket(firstToken);
+  const firstIncoming = waitForSocketEvent(
+    firstSocket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "C",
+  );
+  await joinQueue(firstToken);
+  await joinQueue(secondToken);
+  const result = await createOrderResponse(passengerToken, "C");
+  await firstIncoming;
+
+  const secondAccept = await request(`/orders/${result.body.order.id}/accept`, {
+    method: "POST",
+    token: secondToken,
+  });
+  assert.equal(secondAccept.response.status, 409);
+  assert.equal(secondAccept.body.error.code, "ORDER_RESERVED");
+
+  const firstAccept = await request(`/orders/${result.body.order.id}/accept`, {
+    method: "POST",
+    token: firstToken,
+  });
+  assert.equal(firstAccept.response.status, 200);
+});
+
+test("FIFO dispatch skips drivers without enough seats without reordering the queue", async () => {
+  const passengerToken = await registerUser("+7 777 235 00 01", "passenger", "Passenger");
+  const firstToken = await registerUser("+7 777 235 00 02", "driver", "One Seat");
+  const secondToken = await registerUser("+7 777 235 00 03", "driver", "Three Seats");
+  const firstSocket = await connectSocket(firstToken);
+  const secondSocket = await connectSocket(secondToken);
+  const secondIncoming = waitForSocketEvent(
+    secondSocket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "C",
+  );
+  const firstJoin = await joinQueue(firstToken, 1);
+  const secondJoin = await joinQueue(secondToken, 3);
+  const result = await createOrderResponse(passengerToken, "C", 2);
+
+  assert.equal(firstJoin.body.position, 1);
+  assert.equal(secondJoin.body.position, 2);
+  assert.equal(result.body.offer.driver_id, secondJoin.body.entry.driverId);
+  await assertNoSocketEvent(
+    firstSocket,
+    "incoming_order",
+    (payload) => payload.order?.id === result.body.order.id,
+  );
+  assert.equal((await secondIncoming).order.id, result.body.order.id);
+
+  const accepted = await request(`/orders/${result.body.order.id}/accept`, {
+    method: "POST",
+    token: secondToken,
+  });
+  assert.equal(accepted.response.status, 200);
+});
+
+async function putDriverInTransit(passengerToken, phoneNumber, capacity = 3) {
+  const driverToken = await registerUser(phoneNumber, "driver", "Moving Driver");
+  const socket = await connectSocket(driverToken);
+  const incoming = waitForSocketEvent(
+    socket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "C",
+  );
+  const joined = await joinQueue(driverToken, capacity);
+  const activeOrder = await createOrder(passengerToken, "C", 1, ["C", "D"]);
+  await incoming;
+  const accepted = await request(`/orders/${activeOrder.id}/accept`, {
+    method: "POST",
+    token: driverToken,
+  });
+  assert.equal(accepted.response.status, 200);
+  for (const status of ["arrived_at_c", "in_transit"]) {
+    const updated = await request(`/orders/${activeOrder.id}/status`, {
+      method: "PATCH",
+      token: driverToken,
+      body: { status },
+    });
+    assert.equal(updated.response.status, 200);
+  }
+  return {
+    driverToken,
+    driverId: joined.body.entry.driverId,
+    socket,
+  };
+}
+
+test("after FIFO is exhausted, a compatible nearby moving driver gets a smart-pooling offer", async () => {
+  const passengerToken = await registerUser("+7 777 240 00 01", "passenger", "Passenger");
+  const movingDriver = await putDriverInTransit(
+    passengerToken,
+    "+7 777 240 00 02",
+  );
+  const pooledIncoming = waitForSocketEvent(
+    movingDriver.socket,
     "incoming_order",
     (payload) => payload.order?.pickup_point === "D",
   );
-  const pointDOrder = await createOrder(passengerLoginToken, "D", 2);
-  assert.equal(pointDOrder.status, "searching");
-  assert.equal(pointDOrder.offered_driver_id, firstJoin.body.entry.driverId);
-  const pointDOffer = await pointDIncoming;
-  assert.equal(pointDOffer.order.pickup_point, "D");
 
-  const pooling = await request(`/orders/${pointDOrder.id}/offer-first-driver`, {
+  const result = await createOrderResponse(
+    passengerToken,
+    "D",
+    1,
+    ["D"],
+    queueLocation,
+  );
+  assert.equal(result.body.order.status, "searching");
+  assert.equal(result.body.offer.driver_id, movingDriver.driverId);
+  assert.equal(result.body.offer.queue_position, null);
+  assert.equal(result.body.offer.smart_pooling, true);
+  assert.equal((await pooledIncoming).order.id, result.body.order.id);
+
+  const legacyOfferRoute = await request(
+    `/orders/${result.body.order.id}/offer-first-driver`,
+    { method: "POST", token: movingDriver.driverToken },
+  );
+  assert.equal(legacyOfferRoute.response.status, 200);
+  assert.equal(legacyOfferRoute.body.smart_pooling, true);
+
+  const accepted = await request(`/orders/${result.body.order.id}/accept`, {
     method: "POST",
-    token: driverOneToken,
+    token: movingDriver.driverToken,
   });
-  assert.equal(pooling.response.status, 200);
-  assert.equal(pooling.body.smart_pooling, true);
-  assert.equal(pooling.body.order.offered_driver_id, firstJoin.body.entry.driverId);
+  assert.equal(accepted.response.status, 200);
+  assert.equal(accepted.body.order.status, "in_transit");
+});
+
+test("a moving driver on an incompatible route is not offered the order", async () => {
+  const passengerToken = await registerUser("+7 777 250 00 01", "passenger", "Passenger");
+  const movingDriver = await putDriverInTransit(
+    passengerToken,
+    "+7 777 250 00 02",
+  );
+  const noIncoming = assertNoSocketEvent(
+    movingDriver.socket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "D",
+    250,
+  );
+  const result = await createOrderResponse(
+    passengerToken,
+    "D",
+    1,
+    ["D", "C"],
+    queueLocation,
+  );
+  await noIncoming;
+  assert.equal(result.body.offer, null);
+  assert.equal(result.body.order.offered_driver_id, undefined);
+  assert.equal(result.body.order.status, "searching");
+});
+
+test("smart pooling respects remaining seats before and after an offer is accepted", async () => {
+  const passengerToken = await registerUser("+7 777 260 00 01", "passenger", "Passenger");
+  const movingDriver = await putDriverInTransit(
+    passengerToken,
+    "+7 777 260 00 02",
+    2,
+  );
+
+  const tooManySeats = await createOrderResponse(
+    passengerToken,
+    "D",
+    2,
+    ["D"],
+    queueLocation,
+  );
+  assert.equal(tooManySeats.body.offer, null);
+  assert.equal(tooManySeats.body.order.status, "searching");
+
+  const oneSeatIncoming = waitForSocketEvent(
+    movingDriver.socket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "D",
+  );
+  const oneSeatOrder = await createOrderResponse(
+    passengerToken,
+    "D",
+    1,
+    ["D"],
+    queueLocation,
+  );
+  assert.equal(oneSeatOrder.body.offer.driver_id, movingDriver.driverId);
+  assert.equal((await oneSeatIncoming).order.id, oneSeatOrder.body.order.id);
+  const accepted = await request(`/orders/${oneSeatOrder.body.order.id}/accept`, {
+    method: "POST",
+    token: movingDriver.driverToken,
+  });
+  assert.equal(accepted.response.status, 200);
+
+  const noSeatsIncoming = assertNoSocketEvent(
+    movingDriver.socket,
+    "incoming_order",
+    (payload) => payload.order?.pickup_point === "D",
+    250,
+  );
+  const noSeatsOrder = await createOrderResponse(
+    passengerToken,
+    "D",
+    1,
+    ["D"],
+    queueLocation,
+  );
+  await noSeatsIncoming;
+  assert.equal(noSeatsOrder.body.offer, null);
+  assert.equal(noSeatsOrder.body.order.status, "searching");
 });

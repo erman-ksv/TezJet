@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import type { Server } from "socket.io";
 import { store } from "../store/memoryStore";
 import type { Coordinates, Order, OrderStatus, PickupPoint } from "../types/domain";
-import { SEAT_LOCK_TTL_MS } from "../utils/config";
+import { DRIVER_OFFER_TTL_MS, SEAT_LOCK_TTL_MS } from "../utils/config";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { emitIncomingOrder, emitOrderUpdate, emitQueueUpdate } from "../utils/realtime";
@@ -84,6 +84,46 @@ function sendOrderToDriver(io: Server | undefined, order: Order, driverId: strin
   emitIncomingOrder(io, driverId, order);
 }
 
+function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?: string): Order {
+  const nextDriver = store.getNextEligibleFifoDriver(order.seats, excludedDriverId);
+  if (!nextDriver) {
+    const updated = store.updateOrder(order.id, {
+      offeredDriverId: undefined,
+      offerExpiresAt: undefined,
+    }) as Order;
+    emitOrderUpdate(io, updated);
+    return updated;
+  }
+
+  const offerExpiresAt = Date.now() + DRIVER_OFFER_TTL_MS;
+  const updated = store.updateOrder(order.id, {
+    offeredDriverId: nextDriver.driverId,
+    offerExpiresAt,
+  }) as Order;
+  sendOrderToDriver(io, updated, nextDriver.driverId);
+  emitOrderUpdate(io, updated);
+  emitQueueUpdate(io, {
+    type: "order_offered",
+    driverId: nextDriver.driverId,
+  });
+
+  setTimeout(() => {
+    const current = store.getOrder(order.id);
+    if (
+      !current ||
+      current.status !== "searching" ||
+      current.offeredDriverId !== nextDriver.driverId ||
+      !current.offerExpiresAt ||
+      current.offerExpiresAt > Date.now()
+    ) {
+      return;
+    }
+    offerNextDriver(io, current, nextDriver.driverId);
+  }, DRIVER_OFFER_TTL_MS + 10);
+
+  return updated;
+}
+
 export async function createOrder(
   request: Request,
   response: Response,
@@ -127,11 +167,27 @@ export async function createOrder(
   const firstDriver =
     pickupPoint === "D"
       ? store.getFirstEligibleDriver(order.seats)
-      : store.getQueue()[0];
+      : store.getNextEligibleFifoDriver(order.seats);
   if (firstDriver) {
-    store.updateOrder(order.id, { offeredDriverId: firstDriver.driverId });
-    order.offeredDriverId = firstDriver.driverId;
+    const offered = store.updateOrder(order.id, {
+      offeredDriverId: firstDriver.driverId,
+      offerExpiresAt: Date.now() + DRIVER_OFFER_TTL_MS,
+    }) as Order;
+    Object.assign(order, offered);
     sendOrderToDriver(getSocket(request), order, firstDriver.driverId);
+    setTimeout(() => {
+      const current = store.getOrder(order.id);
+      if (
+        !current ||
+        current.status !== "searching" ||
+        current.offeredDriverId !== firstDriver.driverId ||
+        !current.offerExpiresAt ||
+        current.offerExpiresAt > Date.now()
+      ) {
+        return;
+      }
+      offerNextDriver(getSocket(request), current, firstDriver.driverId);
+    }, DRIVER_OFFER_TTL_MS + 10);
   }
 
   response.status(201).json({
@@ -197,6 +253,7 @@ export function acceptOrder(request: Request, response: Response): void {
   const updated = store.updateOrder(order.id, {
     driverId,
     offeredDriverId: driverId,
+    offerExpiresAt: undefined,
     status,
     seatLockExpiresAt,
   }) as Order;
@@ -239,6 +296,30 @@ export function acceptOrder(request: Request, response: Response): void {
     message: translate(request.auth?.locale ?? "ru", "seatLocked"),
     order: serializeOrder(updated, true),
     seat_lock_minutes: order.pickupPoint === "C" ? 7 : null,
+  });
+}
+
+export function rejectOrder(request: Request, response: Response): void {
+  const driverId = assertDriver(request);
+  const order = store.getOrder(String(request.params["orderId"]));
+  if (!order) {
+    throw new AppError(
+      404,
+      translate(request.auth?.locale ?? "ru", "orderNotFound"),
+      "ORDER_NOT_FOUND",
+    );
+  }
+  if (
+    order.status !== "searching" ||
+    order.offeredDriverId !== driverId
+  ) {
+    throw new AppError(409, "Order is not currently offered to this driver", "ORDER_NOT_OFFERED");
+  }
+
+  const updated = offerNextDriver(getSocket(request), order, driverId);
+  response.json({
+    order: serializeOrder(updated, true),
+    offered_driver_id: updated.offeredDriverId ?? null,
   });
 }
 

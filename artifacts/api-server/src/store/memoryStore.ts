@@ -107,6 +107,21 @@ class MemoryStore {
     return this.queueEntries.get(driverId);
   }
 
+  listQueueEntries(): QueueEntry[] {
+    return [...this.queueEntries.values()];
+  }
+
+  hasActiveOfferForDriver(driverId: string, exceptOrderId?: string): boolean {
+    const now = Date.now();
+    return [...this.orders.values()].some(
+      (order) =>
+        order.id !== exceptOrderId &&
+        order.status === "searching" &&
+        order.offeredDriverId === driverId &&
+        (order.offerExpiresAt === undefined || order.offerExpiresAt > now),
+    );
+  }
+
   /**
    * Redis equivalent: remove the driver from the FIFO sorted set while
    * retaining the active-trip record for pooled orders.
@@ -165,6 +180,25 @@ class MemoryStore {
   getQueuePosition(driverId: string): number | null {
     const index = this.getQueue().findIndex((entry) => entry.driverId === driverId);
     return index === -1 ? null : index + 1;
+  }
+
+  getAvailableFifoDrivers(
+    seats: number,
+    excludedDriverIds: readonly string[] = [],
+    exceptOrderId?: string,
+  ): QueueEntry[] {
+    const excluded = new Set(excludedDriverIds);
+    const now = Date.now();
+    return this.getQueue().filter(
+      (entry) =>
+        entry.status === "searching" &&
+        entry.availableSeats >= seats &&
+        !entry.currentOrderId &&
+        (entry.activeOrderIds?.length ?? 0) === 0 &&
+        (!entry.seatLockExpiresAt || entry.seatLockExpiresAt <= now) &&
+        !excluded.has(entry.driverId) &&
+        !this.hasActiveOfferForDriver(entry.driverId, exceptOrderId),
+    );
   }
 
   getFirstEligibleDriver(seats: number): QueueEntry | undefined {

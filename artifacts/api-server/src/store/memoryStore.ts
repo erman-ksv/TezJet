@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { DRIVER_APPROACH_RADIUS_METERS } from "../utils/config";
+import { distanceMeters, isApproaching, isWithinRadius } from "../utils/geo";
 import type {
   Coordinates,
   DeviceRegistration,
@@ -182,6 +184,40 @@ class MemoryStore {
         entry.status === "searching" &&
         entry.availableSeats >= seats,
     );
+  }
+
+  getEligibleDriverForPickup(
+    seats: number,
+    pickupLocation: Coordinates,
+    excludedDriverId?: string,
+    pickupRadiusMeters = 150,
+  ): QueueEntry | undefined {
+    const isEligibleByLocation = (entry: QueueEntry): boolean => {
+      if (entry.driverId === excludedDriverId || entry.availableSeats < seats) {
+        return false;
+      }
+      const distance = distanceMeters(entry.lastLocation, pickupLocation);
+      return (
+        isWithinRadius(entry.lastLocation, pickupLocation, pickupRadiusMeters) ||
+        (distance <= DRIVER_APPROACH_RADIUS_METERS &&
+          isApproaching(entry.previousLocation, entry.lastLocation, pickupLocation))
+      );
+    };
+
+    const fifoCandidate = this.getQueue().find(
+      (entry) => entry.status === "searching" && isEligibleByLocation(entry),
+    );
+    if (fifoCandidate) {
+      return fifoCandidate;
+    }
+
+    return [...this.queueEntries.values()]
+      .filter((entry) => entry.status === "searching")
+      .filter(isEligibleByLocation)
+      .sort((a, b) =>
+        distanceMeters(a.lastLocation, pickupLocation) -
+        distanceMeters(b.lastLocation, pickupLocation),
+      )[0];
   }
 
   getFirstEligibleDriver(seats: number, excludedDriverId?: string): QueueEntry | undefined {

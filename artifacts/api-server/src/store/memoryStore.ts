@@ -14,6 +14,7 @@ import type {
   User,
   UserRole,
 } from "../types/domain";
+import { isDriverEligibleForPickup } from "../services/pickupProximity";
 
 class MemoryStore {
   private readonly users = new Map<string, User>();
@@ -142,6 +143,9 @@ class MemoryStore {
     if (!entry) {
       return undefined;
     }
+    if (patch.lastLocation) {
+      entry.previousLocation = entry.lastLocation;
+    }
     Object.assign(entry, patch);
     return entry;
   }
@@ -177,6 +181,33 @@ class MemoryStore {
             (entry.activeOrderIds && entry.activeOrderIds.length > 0),
         ),
     );
+  }
+
+  getFirstEligibleDriverForPickup(
+    pickupLocation: Coordinates,
+    seats: number,
+  ): QueueEntry | undefined {
+    const candidates = [...this.queueEntries.values()]
+      .filter((entry) => isDriverEligibleForPickup(entry, pickupLocation, seats))
+      .filter(
+        (entry) =>
+          entry.status === "searching" ||
+          (entry.status === "in_transit" &&
+            Boolean(
+              entry.currentOrderId ||
+                (entry.activeOrderIds && entry.activeOrderIds.length > 0),
+            )),
+      )
+      .sort((a, b) => {
+        const aDistance = isDriverEligibleForPickup(a, pickupLocation, seats);
+        const bDistance = isDriverEligibleForPickup(b, pickupLocation, seats);
+        if (aDistance !== bDistance) {
+          return aDistance ? -1 : 1;
+        }
+        return a.joinedAt - b.joinedAt;
+      });
+
+    return candidates[0];
   }
 
   createOrder(input: Omit<Order, "id" | "createdAt" | "updatedAt">): Order {

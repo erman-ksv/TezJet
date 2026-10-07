@@ -271,7 +271,10 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
     token: passengerLoginToken,
     body: {
       pickup_point: "C",
-      pickup_location: unavailablePickup,
+      pickup_location: {
+        ...unavailablePickup,
+        timestamp: unavailablePickup.timestamp + 1_000,
+      },
       route_stops: ["C", "D"],
       destination: "approaching pickup destination",
       seats: 1,

@@ -116,6 +116,7 @@ export interface Order {
   passengerPhone: string;
   driverId?: string;
   offeredDriverId?: string;
+  offerExpiresAt?: number;
   pickupPoint: PickupPoint;
   pickupLocation: Coordinates;
   pickupAddress?: NormalizedAddress;

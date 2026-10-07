@@ -5,11 +5,18 @@ import type { Coordinates, Order, OrderStatus, PickupPoint } from "../types/doma
 import { SEAT_LOCK_TTL_MS } from "../utils/config";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
-import { emitIncomingOrder, emitOrderUpdate, emitQueueUpdate } from "../utils/realtime";
+import { emitOrderUpdate, emitQueueUpdate } from "../utils/realtime";
 import { serializeOrder } from "../utils/serialize";
 import { calculateRouteFare, parseRouteStopCodes } from "../utils/fare";
 import { boundedInteger, optionalString, pickEnum, requiredString } from "../utils/validation";
 import { normalizeNaturalLanguageAddress } from "../services/geminiAddressService";
+import {
+  clearOrderOffer,
+  declineOrderOffer,
+  dispatchNextOrderOffer,
+  dispatchWaitingOrders,
+  expireOrderOffer,
+} from "../services/orderDispatcher";
 
 const statusTransitions: Record<OrderStatus, readonly OrderStatus[]> = {
   searching: ["en_route_to_c", "cancelled"],
@@ -80,10 +87,6 @@ function getOrderForActor(request: Request, orderId: string): Order {
   return order;
 }
 
-function sendOrderToDriver(io: Server | undefined, order: Order, driverId: string): void {
-  emitIncomingOrder(io, driverId, order);
-}
-
 export async function createOrder(
   request: Request,
   response: Response,
@@ -124,23 +127,16 @@ export async function createOrder(
     status: "searching",
   });
 
-  const firstDriver =
-    pickupPoint === "D"
-      ? store.getFirstEligibleDriver(order.seats)
-      : store.getQueue()[0];
-  if (firstDriver) {
-    store.updateOrder(order.id, { offeredDriverId: firstDriver.driverId });
-    order.offeredDriverId = firstDriver.driverId;
-    sendOrderToDriver(getSocket(request), order, firstDriver.driverId);
-  }
+  const firstOffer = dispatchNextOrderOffer(order.id, getSocket(request), false);
+  const dispatchedOrder = store.getOrder(order.id) as Order;
 
   response.status(201).json({
-    order: serializeOrder(order),
-    offer: firstDriver
+    order: serializeOrder(dispatchedOrder),
+    offer: firstOffer
       ? {
-          driver_id: firstDriver.driverId,
-          queue_position: store.getQueuePosition(firstDriver.driverId),
-          smart_pooling: pickupPoint === "D",
+          driver_id: firstOffer.driverId,
+          queue_position: firstOffer.queuePosition,
+          smart_pooling: firstOffer.smartPooling,
         }
       : null,
   });
@@ -173,30 +169,53 @@ export function acceptOrder(request: Request, response: Response): void {
   if (order.status !== "searching" || (order.driverId && order.driverId !== driverId)) {
     throw new AppError(409, "Order is no longer available", "ORDER_UNAVAILABLE");
   }
-  if (order.offeredDriverId && order.offeredDriverId !== driverId) {
+  if (
+    order.offeredDriverId &&
+    order.offerExpiresAt !== undefined &&
+    order.offerExpiresAt <= Date.now()
+  ) {
+    expireOrderOffer(
+      order.id,
+      order.offeredDriverId,
+      order.offerExpiresAt,
+      getSocket(request),
+    );
+    throw new AppError(409, "Order offer has expired", "ORDER_OFFER_EXPIRED");
+  }
+  if (!order.offeredDriverId) {
+    throw new AppError(409, "Order is no longer available", "ORDER_UNAVAILABLE");
+  }
+  if (order.offeredDriverId !== driverId) {
     throw new AppError(409, "Order is reserved for another driver", "ORDER_RESERVED");
   }
 
   const queueEntry = store.getQueueEntry(driverId);
-  const position = store.getQueuePosition(driverId);
   const isActivePoolOffer =
     order.pickupPoint === "D" &&
     order.offeredDriverId === driverId &&
     queueEntry?.inFifo === false &&
     queueEntry.status === "in_transit";
-  if (!queueEntry || (!isActivePoolOffer && position !== 1)) {
-    throw new AppError(409, "Only the first driver in the queue can accept this order", "FIFO_REQUIRED");
+  const isEligibleFifoOffer =
+    queueEntry?.inFifo !== false && queueEntry?.status === "searching";
+  if (!queueEntry || (!isActivePoolOffer && !isEligibleFifoOffer)) {
+    throw new AppError(
+      409,
+      "Only the driver with the active order offer can accept this order",
+      "FIFO_REQUIRED",
+    );
   }
   if (queueEntry.availableSeats < order.seats) {
     throw new AppError(409, "Not enough available seats", "SEATS_UNAVAILABLE");
   }
 
+  clearOrderOffer(order.id);
   const seatLockExpiresAt =
     order.pickupPoint === "C" ? Date.now() + SEAT_LOCK_TTL_MS : undefined;
   const status: OrderStatus = order.pickupPoint === "C" ? "en_route_to_c" : "in_transit";
   const updated = store.updateOrder(order.id, {
     driverId,
     offeredDriverId: driverId,
+    offerExpiresAt: undefined,
     status,
     seatLockExpiresAt,
   }) as Order;
@@ -235,6 +254,9 @@ export function acceptOrder(request: Request, response: Response): void {
     type: "order_assigned",
     driverId,
   });
+  if (status === "in_transit") {
+    dispatchWaitingOrders(getSocket(request));
+  }
   response.json({
     message: translate(request.auth?.locale ?? "ru", "seatLocked"),
     order: serializeOrder(updated, true),
@@ -315,6 +337,13 @@ export function updateOrderStatus(request: Request, response: Response): void {
     type: "order_released",
     driverId,
   });
+  if (
+    nextStatus === "in_transit" ||
+    nextStatus === "completed" ||
+    nextStatus === "cancelled"
+  ) {
+    dispatchWaitingOrders(getSocket(request));
+  }
   response.json({ order: serializeOrder(updated, true) });
 }
 
@@ -323,10 +352,12 @@ export function cancelOrder(request: Request, response: Response): void {
   if (order.status === "completed" || order.status === "cancelled") {
     throw new AppError(409, "Order is already closed", "ORDER_CLOSED");
   }
+  clearOrderOffer(order.id);
   const updated = store.updateOrder(order.id, {
     status: "cancelled",
     cancelledBy: request.auth?.userId,
     driverId: order.driverId,
+    offerExpiresAt: undefined,
     seatLockExpiresAt: undefined,
   }) as Order;
   if (order.driverId) {
@@ -366,7 +397,43 @@ export function cancelOrder(request: Request, response: Response): void {
     type: "order_released",
     driverId: order.driverId,
   });
+  dispatchWaitingOrders(getSocket(request));
   response.json({ order: serializeOrder(updated, request.auth?.role === "driver") });
+}
+
+export function declineOrder(request: Request, response: Response): void {
+  const driverId = assertDriver(request);
+  const orderId = String(request.params["orderId"]);
+  const order = store.getOrder(orderId);
+  if (!order) {
+    throw new AppError(
+      404,
+      translate(request.auth?.locale ?? "ru", "orderNotFound"),
+      "ORDER_NOT_FOUND",
+    );
+  }
+  if (order.status !== "searching") {
+    throw new AppError(409, "Order is no longer available", "ORDER_UNAVAILABLE");
+  }
+  if (order.offeredDriverId !== driverId) {
+    throw new AppError(409, "There is no active offer for this driver", "ORDER_NOT_OFFERED");
+  }
+
+  const declined = declineOrderOffer(orderId, driverId, getSocket(request));
+  if (!declined) {
+    throw new AppError(409, "There is no active offer for this driver", "ORDER_NOT_OFFERED");
+  }
+  response.json({
+    message: "Offer declined",
+    order: serializeOrder(declined.order, true),
+    offer: declined.offer
+      ? {
+          driver_id: declined.offer.driverId,
+          queue_position: declined.offer.queuePosition,
+          smart_pooling: declined.offer.smartPooling,
+        }
+      : null,
+  });
 }
 
 export function offerToFirstDriver(request: Request, response: Response): void {
@@ -375,12 +442,24 @@ export function offerToFirstDriver(request: Request, response: Response): void {
   if (order.pickupPoint !== "D" || order.status !== "searching") {
     throw new AppError(409, "Only searching Point D orders can be pooled", "NOT_POOLING_ORDER");
   }
-  const firstDriver = store.getFirstEligibleDriver(order.seats);
-  if (!firstDriver || firstDriver.driverId !== driverId) {
-    throw new AppError(409, "You are not the eligible first driver", "FIFO_REQUIRED");
+  if (
+    order.offeredDriverId &&
+    order.offerExpiresAt !== undefined &&
+    order.offerExpiresAt <= Date.now()
+  ) {
+    expireOrderOffer(
+      order.id,
+      order.offeredDriverId,
+      order.offerExpiresAt,
+      getSocket(request),
+    );
+    throw new AppError(409, "Order offer has expired", "ORDER_OFFER_EXPIRED");
   }
-  store.updateOrder(order.id, { offeredDriverId: driverId });
-  order.offeredDriverId = driverId;
-  sendOrderToDriver(getSocket(request), order, driverId);
-  response.json({ order: serializeOrder(order, true), smart_pooling: true });
+  if (order.offeredDriverId !== driverId) {
+    throw new AppError(409, "You are not the active order offer recipient", "FIFO_REQUIRED");
+  }
+  const queueEntry = store.getQueueEntry(driverId);
+  const smartPooling =
+    queueEntry?.status === "in_transit" && queueEntry.inFifo === false;
+  response.json({ order: serializeOrder(order, true), smart_pooling: smartPooling });
 }

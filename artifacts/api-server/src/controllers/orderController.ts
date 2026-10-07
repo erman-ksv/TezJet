@@ -10,6 +10,7 @@ import { serializeOrder } from "../utils/serialize";
 import { calculateRouteFare, parseRouteStopCodes } from "../utils/fare";
 import { boundedInteger, optionalString, pickEnum, requiredString } from "../utils/validation";
 import { normalizeNaturalLanguageAddress } from "../services/geminiAddressService";
+import { isDriverEligibleForPickup } from "../services/pickupProximity";
 
 const statusTransitions: Record<OrderStatus, readonly OrderStatus[]> = {
   searching: ["en_route_to_c", "cancelled"],
@@ -124,10 +125,10 @@ export async function createOrder(
     status: "searching",
   });
 
-  const firstDriver =
-    pickupPoint === "D"
-      ? store.getFirstEligibleDriver(order.seats)
-      : store.getQueue()[0];
+  const firstDriver = store.getFirstEligibleDriverForPickup(
+    order.pickupLocation,
+    order.seats,
+  );
   if (firstDriver) {
     store.updateOrder(order.id, { offeredDriverId: firstDriver.driverId });
     order.offeredDriverId = firstDriver.driverId;
@@ -179,13 +180,24 @@ export function acceptOrder(request: Request, response: Response): void {
 
   const queueEntry = store.getQueueEntry(driverId);
   const position = store.getQueuePosition(driverId);
-  const isActivePoolOffer =
-    order.pickupPoint === "D" &&
+  const isProximityOffer =
+    Boolean(queueEntry) &&
     order.offeredDriverId === driverId &&
+    isDriverEligibleForPickup(
+      queueEntry as NonNullable<typeof queueEntry>,
+      order.pickupLocation,
+      order.seats,
+    );
+  const isActivePoolOffer =
+    isProximityOffer &&
     queueEntry?.inFifo === false &&
     queueEntry.status === "in_transit";
-  if (!queueEntry || (!isActivePoolOffer && position !== 1)) {
-    throw new AppError(409, "Only the first driver in the queue can accept this order", "FIFO_REQUIRED");
+  if (!queueEntry || (!isActivePoolOffer && !isProximityOffer && position !== 1)) {
+    throw new AppError(
+      409,
+      "No eligible driver is currently at or approaching the pickup",
+      "PICKUP_DRIVER_NOT_ELIGIBLE",
+    );
   }
   if (queueEntry.availableSeats < order.seats) {
     throw new AppError(409, "Not enough available seats", "SEATS_UNAVAILABLE");
@@ -375,7 +387,10 @@ export function offerToFirstDriver(request: Request, response: Response): void {
   if (order.pickupPoint !== "D" || order.status !== "searching") {
     throw new AppError(409, "Only searching Point D orders can be pooled", "NOT_POOLING_ORDER");
   }
-  const firstDriver = store.getFirstEligibleDriver(order.seats);
+  const firstDriver = store.getFirstEligibleDriverForPickup(
+    order.pickupLocation,
+    order.seats,
+  );
   if (!firstDriver || firstDriver.driverId !== driverId) {
     throw new AppError(409, "You are not the eligible first driver", "FIFO_REQUIRED");
   }

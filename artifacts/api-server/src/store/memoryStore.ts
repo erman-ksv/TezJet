@@ -15,6 +15,7 @@ import type {
   UserRole,
 } from "../types/domain";
 import { isDriverEligibleForPickup } from "../services/pickupProximity";
+import { distanceMeters } from "../utils/geo";
 
 class MemoryStore {
   private readonly users = new Map<string, User>();
@@ -199,10 +200,10 @@ class MemoryStore {
             )),
       )
       .sort((a, b) => {
-        const aDistance = isDriverEligibleForPickup(a, pickupLocation, seats);
-        const bDistance = isDriverEligibleForPickup(b, pickupLocation, seats);
+        const aDistance = distanceMeters(a.lastLocation, pickupLocation);
+        const bDistance = distanceMeters(b.lastLocation, pickupLocation);
         if (aDistance !== bDistance) {
-          return aDistance ? -1 : 1;
+          return aDistance - bDistance;
         }
         return a.joinedAt - b.joinedAt;
       });

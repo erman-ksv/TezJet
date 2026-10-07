@@ -8,6 +8,7 @@ import {
   getOrder,
   listOrders,
   offerToFirstDriver,
+  rejectOrder,
   updateOrderStatus,
 } from "../controllers/orderController";
 
@@ -27,6 +28,12 @@ router.post(
   authenticate,
   requireRole("driver"),
   acceptOrder,
+);
+router.post(
+  "/orders/:orderId/reject",
+  authenticate,
+  requireRole("driver"),
+  rejectOrder,
 );
 router.patch(
   "/orders/:orderId/status",

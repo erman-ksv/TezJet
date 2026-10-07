@@ -85,13 +85,11 @@ function sendOrderToDriver(io: Server | undefined, order: Order, driverId: strin
 }
 
 function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?: string): Order {
-  const nextDriver =
-    order.pickupPoint === "D"
-      ? store.getFirstEligibleDriver(order.seats, excludedDriverId)
-      : store.getNextEligibleFifoDriver(
-          order.seats,
-          excludedDriverId ?? order.offeredDriverId,
-        );
+  const nextDriver = store.getEligibleDriverForPickup(
+    order.seats,
+    order.pickupLocation,
+    excludedDriverId ?? order.offeredDriverId,
+  );
   if (!nextDriver) {
     const updated = store.updateOrder(order.id, {
       offeredDriverId: undefined,
@@ -130,6 +128,33 @@ function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?
   return updated;
 }
 
+
+export function getOrderAvailability(request: Request, response: Response): void {
+  const pickupPoint = pickEnum(
+    request.query.pickup_point ?? "C",
+    "pickup_point",
+    ["C", "D"] as const,
+  ) as PickupPoint;
+  const pickupLocation = {
+    lat: Number(request.query.lat),
+    lng: Number(request.query.lng),
+    timestamp: Date.now(),
+  };
+  if (!Number.isFinite(pickupLocation.lat) || !Number.isFinite(pickupLocation.lng)) {
+    throw new AppError(400, "pickup location is required", "VALIDATION_ERROR");
+  }
+  const seats = boundedInteger(request.query.seats ?? 1, "seats", 1, 8);
+  const driver = store.getEligibleDriverForPickup(seats, pickupLocation);
+  response.json({
+    available: Boolean(driver),
+    message: driver
+      ? "A driver is available"
+      : translate(request.auth?.locale ?? "ru", "driversUnavailable"),
+    pickup_point: pickupPoint,
+    driver_id: driver?.driverId ?? null,
+  });
+}
+
 export async function createOrder(
   request: Request,
   response: Response,
@@ -139,6 +164,20 @@ export async function createOrder(
     "C",
     "D",
   ] as const) as PickupPoint;
+  const pickupLocation = getPickupLocation(request);
+  const seats = boundedInteger(request.body?.seats ?? 1, "seats", 1, 8);
+  const availableDriver = store.getEligibleDriverForPickup(
+    seats,
+    pickupLocation,
+  );
+  if (!availableDriver) {
+    throw new AppError(
+      409,
+      translate(request.auth?.locale ?? "ru", "driversUnavailable"),
+      "DRIVERS_UNAVAILABLE",
+    );
+  }
+
   const requestedStops = parseRouteStopCodes(request.body?.route_stops);
   const fare = calculateRouteFare({
     routeId: request.body?.route_id,
@@ -161,19 +200,16 @@ export async function createOrder(
     passengerId,
     passengerPhone: request.auth?.user.phoneNumber ?? "",
     pickupPoint,
-    pickupLocation: getPickupLocation(request),
+    pickupLocation,
     pickupAddress,
     routeStops: fare.stops,
     fare,
     destination: requiredString(request.body?.destination, "destination", 240),
-    seats: boundedInteger(request.body?.seats ?? 1, "seats", 1, 8),
+    seats,
     status: "searching",
   });
 
-  const firstDriver =
-    pickupPoint === "D"
-      ? store.getFirstEligibleDriver(order.seats)
-      : store.getNextEligibleFifoDriver(order.seats);
+  const firstDriver = availableDriver;
   if (firstDriver) {
     const offered = store.updateOrder(order.id, {
       offeredDriverId: firstDriver.driverId,

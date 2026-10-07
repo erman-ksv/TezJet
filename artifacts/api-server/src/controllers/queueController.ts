@@ -140,7 +140,10 @@ export function updateQueueLocation(request: Request, response: Response): void 
       "OUTSIDE_QUEUE_GEOFENCE",
     );
   }
-  const entry = store.updateQueueEntry(driverId, { lastLocation: location });
+  const entry = store.updateQueueEntry(driverId, {
+    previousLocation: current.lastLocation,
+    lastLocation: location,
+  });
   if (!entry) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }

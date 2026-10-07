@@ -295,7 +295,12 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   const returnToQueueLocation = await request("/queue/location", {
     method: "PATCH",
     token: driverOneToken,
-    body: { location: queueLocation },
+    body: {
+      location: {
+        ...queueLocation,
+        timestamp: Date.now() + 240_000,
+      },
+    },
   });
   assert.equal(returnToQueueLocation.response.status, 200);
 

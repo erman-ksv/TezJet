@@ -88,7 +88,10 @@ function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?
   const nextDriver =
     order.pickupPoint === "D"
       ? store.getFirstEligibleDriver(order.seats, excludedDriverId)
-      : store.getNextEligibleFifoDriver(order.seats, excludedDriverId);
+      : store.getNextEligibleFifoDriver(
+          order.seats,
+          excludedDriverId ?? order.offeredDriverId,
+        );
   if (!nextDriver) {
     const updated = store.updateOrder(order.id, {
       offeredDriverId: undefined,

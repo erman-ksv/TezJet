@@ -212,7 +212,10 @@ class MemoryStore {
     }
 
     return [...this.queueEntries.values()]
-      .filter((entry) => entry.status === "searching")
+      .filter(
+        (entry) =>
+          entry.status === "searching" || entry.status === "picking_up",
+      )
       .filter(isEligibleByLocation)
       .sort((a, b) =>
         distanceMeters(a.lastLocation, pickupLocation) -

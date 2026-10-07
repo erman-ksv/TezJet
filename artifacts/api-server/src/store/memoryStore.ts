@@ -171,7 +171,12 @@ class MemoryStore {
     seats: number,
     excludedDriverId?: string,
   ): QueueEntry | undefined {
-    return this.getQueue().find(
+    const queue = this.getQueue();
+    const excludedIndex = excludedDriverId
+      ? queue.findIndex((entry) => entry.driverId === excludedDriverId)
+      : -1;
+    const candidates = excludedIndex >= 0 ? queue.slice(excludedIndex + 1) : queue;
+    return candidates.find(
       (entry) =>
         entry.driverId !== excludedDriverId &&
         entry.status === "searching" &&

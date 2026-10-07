@@ -215,7 +215,7 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   const unavailablePickup = {
     lat: 41.35,
     lng: 69.2797,
-    timestamp: Date.now(),
+    timestamp: Date.now() + 120_000,
   };
   const unavailableCheck = await request(
     `/orders/availability?pickup_point=C&lat=${unavailablePickup.lat}&lng=${unavailablePickup.lng}&seats=1`,

@@ -5,6 +5,7 @@ import {
   acceptOrder,
   cancelOrder,
   createOrder,
+  declineOrder,
   getOrder,
   listOrders,
   offerToFirstDriver,
@@ -27,6 +28,12 @@ router.post(
   authenticate,
   requireRole("driver"),
   acceptOrder,
+);
+router.post(
+  "/orders/:orderId/decline",
+  authenticate,
+  requireRole("driver"),
+  declineOrder,
 );
 router.patch(
   "/orders/:orderId/status",

@@ -191,6 +191,7 @@ class MemoryStore {
     pickupLocation: Coordinates,
     excludedDriverId?: string,
     pickupRadiusMeters = 150,
+    allowInTransit = false,
   ): QueueEntry | undefined {
     const isEligibleByLocation = (entry: QueueEntry): boolean => {
       if (entry.driverId === excludedDriverId || entry.availableSeats < seats) {
@@ -205,7 +206,10 @@ class MemoryStore {
     };
 
     const fifoCandidate = this.getQueue().find(
-      (entry) => entry.status === "searching" && isEligibleByLocation(entry),
+      (entry) =>
+        (entry.status === "searching" ||
+          (allowInTransit && entry.status === "in_transit")) &&
+        isEligibleByLocation(entry),
     );
     if (fifoCandidate) {
       return fifoCandidate;
@@ -214,7 +218,9 @@ class MemoryStore {
     return [...this.queueEntries.values()]
       .filter(
         (entry) =>
-          entry.status === "searching" || entry.status === "picking_up",
+          entry.status === "searching" ||
+          entry.status === "picking_up" ||
+          (allowInTransit && entry.status === "in_transit"),
       )
       .filter(isEligibleByLocation)
       .sort((a, b) =>

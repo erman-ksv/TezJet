@@ -179,9 +179,10 @@ class MemoryStore {
     );
   }
 
-  getFirstEligibleDriver(seats: number): QueueEntry | undefined {
+  getFirstEligibleDriver(seats: number, excludedDriverId?: string): QueueEntry | undefined {
     return [...this.queueEntries.values()].find(
       (entry) =>
+        entry.driverId !== excludedDriverId &&
         entry.status === "in_transit" &&
         entry.availableSeats >= seats &&
         Boolean(

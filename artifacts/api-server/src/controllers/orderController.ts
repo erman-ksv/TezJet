@@ -89,6 +89,8 @@ function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?
     order.seats,
     order.pickupLocation,
     excludedDriverId ?? order.offeredDriverId,
+    150,
+    order.pickupPoint === "D",
   );
   if (!nextDriver) {
     const updated = store.updateOrder(order.id, {
@@ -169,6 +171,9 @@ export async function createOrder(
   const availableDriver = store.getEligibleDriverForPickup(
     seats,
     pickupLocation,
+    undefined,
+    150,
+    pickupPoint === "D",
   );
   if (!availableDriver) {
     throw new AppError(

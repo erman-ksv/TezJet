@@ -38,6 +38,19 @@ export function speedKmh(
   return distanceMeters(previous, current) / 1000 / elapsedHours;
 }
 
+export function isApproaching(
+  previous: Coordinates | undefined,
+  current: Coordinates,
+  destination: Coordinates,
+): boolean {
+  if (!previous) {
+    return false;
+  }
+  const previousDistance = distanceMeters(previous, destination);
+  const currentDistance = distanceMeters(current, destination);
+  return currentDistance + 10 < previousDistance;
+}
+
 export function isValidCoordinates(location: Coordinates): boolean {
   return (
     Number.isFinite(location.lat) &&

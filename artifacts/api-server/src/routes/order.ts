@@ -6,14 +6,22 @@ import {
   cancelOrder,
   createOrder,
   getOrder,
+  getOrderAvailability,
   listOrders,
   offerToFirstDriver,
+  rejectOrder,
   updateOrderStatus,
 } from "../controllers/orderController";
 
 const router: IRouter = Router();
 
 router.get("/orders", authenticate, listOrders);
+router.get(
+  "/orders/availability",
+  authenticate,
+  requireRole("passenger"),
+  getOrderAvailability,
+);
 router.post(
   "/orders",
   authenticate,
@@ -27,6 +35,12 @@ router.post(
   authenticate,
   requireRole("driver"),
   acceptOrder,
+);
+router.post(
+  "/orders/:orderId/reject",
+  authenticate,
+  requireRole("driver"),
+  rejectOrder,
 );
 router.patch(
   "/orders/:orderId/status",

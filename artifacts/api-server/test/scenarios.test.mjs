@@ -159,6 +159,7 @@ before(async () => {
       NODE_ENV: "test",
       PORT: String(port),
       SESSION_SECRET: "tezjet-test-session-secret",
+      DRIVER_OFFER_TTL_MS: "50",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -210,6 +211,114 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   });
   assert.equal(secondJoin.response.status, 201);
   assert.equal(secondJoin.body.position, 2);
+
+  const availabilityPassengerToken = await registerUser(
+    "+7 777 100 00 04",
+    "passenger",
+    "Availability Passenger",
+  );
+
+  const unavailablePickup = {
+    lat: 41.34,
+    lng: 69.2797,
+    timestamp: Date.now() + 120_000,
+  };
+  const unavailableCheck = await request(
+    `/orders/availability?pickup_point=C&lat=${unavailablePickup.lat}&lng=${unavailablePickup.lng}&seats=1`,
+    { token: availabilityPassengerToken },
+  );
+  assert.equal(unavailableCheck.response.status, 200);
+  assert.equal(unavailableCheck.body.available, false);
+  assert.equal(unavailableCheck.body.message, "Водителей пока нет");
+
+  const unavailableOrder = await request("/orders", {
+    method: "POST",
+    token: availabilityPassengerToken,
+    body: {
+      pickup_point: "C",
+      pickup_location: unavailablePickup,
+      route_stops: ["C", "D"],
+      destination: "unavailable pickup destination",
+      seats: 1,
+    },
+  });
+  assert.equal(unavailableOrder.response.status, 409);
+  assert.equal(unavailableOrder.body.error.code, "DRIVERS_UNAVAILABLE");
+
+  const approachStatus = await request("/queue/status", {
+    method: "PATCH",
+    token: driverOneToken,
+    body: { status: "picking_up" },
+  });
+  assert.equal(approachStatus.response.status, 200);
+
+  const approachingLocation = {
+    lat: 41.33,
+    lng: 69.2797,
+    timestamp: Date.now() + 120_000,
+  };
+  const approachingUpdate = await request("/queue/location", {
+    method: "PATCH",
+    token: driverOneToken,
+    body: { location: approachingLocation },
+  });
+  assert.equal(approachingUpdate.response.status, 200);
+
+  const approachingCheck = await request(
+    `/orders/availability?pickup_point=C&lat=${unavailablePickup.lat}&lng=${unavailablePickup.lng}&seats=1`,
+    { token: availabilityPassengerToken },
+  );
+  assert.equal(approachingCheck.response.status, 200);
+  assert.equal(approachingCheck.body.available, true);
+  assert.equal(approachingCheck.body.driver_id, firstJoin.body.entry.driverId);
+
+  const approachingOrder = await request("/orders", {
+    method: "POST",
+    token: availabilityPassengerToken,
+    body: {
+      pickup_point: "C",
+      pickup_location: {
+        ...unavailablePickup,
+        timestamp: unavailablePickup.timestamp + 1_000,
+      },
+      route_stops: ["C", "D"],
+      destination: "approaching pickup destination",
+      seats: 1,
+    },
+  });
+  assert.equal(approachingOrder.response.status, 201);
+  assert.equal(
+    approachingOrder.body.order.offered_driver_id,
+    firstJoin.body.entry.driverId,
+  );
+
+  const approachingCancelled = await request(
+    `/orders/${approachingOrder.body.order.id}/cancel`,
+    {
+      method: "POST",
+      token: availabilityPassengerToken,
+    },
+  );
+  assert.equal(approachingCancelled.response.status, 200);
+
+  const returnToQueueLocation = await request("/queue/location", {
+    method: "PATCH",
+    token: driverOneToken,
+    body: {
+      location: {
+        ...queueLocation,
+        timestamp: Date.now() + 240_000,
+      },
+    },
+  });
+  assert.equal(returnToQueueLocation.response.status, 200);
+
+  const returnToSearching = await request("/queue/status", {
+    method: "PATCH",
+    token: driverOneToken,
+    body: { status: "searching" },
+  });
+  assert.equal(returnToSearching.response.status, 200);
 
   const firstOrderIncoming = waitForSocketEvent(
     driverOneSocket,
@@ -284,6 +393,48 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
       assert.equal(entry.status, expectedQueueStatus);
     }
   }
+
+  const rejectedOrder = await createOrder(passengerLoginToken, "C", 1);
+  assert.equal(rejectedOrder.offered_driver_id, firstJoin.body.entry.driverId);
+
+  const rejected = await request(`/orders/${rejectedOrder.id}/reject`, {
+    method: "POST",
+    token: driverOneToken,
+  });
+  assert.equal(rejected.response.status, 200);
+  assert.equal(rejected.body.offered_driver_id, secondJoin.body.entry.driverId);
+
+  const fallbackAccepted = await request(`/orders/${rejectedOrder.id}/accept`, {
+    method: "POST",
+    token: driverTwoToken,
+  });
+  assert.equal(fallbackAccepted.response.status, 200);
+  assert.equal(fallbackAccepted.body.order.driver_id, secondJoin.body.entry.driverId);
+
+  const fallbackCancelled = await request(`/orders/${rejectedOrder.id}/cancel`, {
+    method: "POST",
+    token: passengerLoginToken,
+  });
+  assert.equal(fallbackCancelled.response.status, 200);
+
+  const timedOutOrder = await createOrder(passengerLoginToken, "C", 1);
+  assert.equal(timedOutOrder.offered_driver_id, firstJoin.body.entry.driverId);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const timedOut = await request(`/orders/${timedOutOrder.id}`, {
+    token: passengerLoginToken,
+  });
+  assert.equal(timedOut.response.status, 200);
+  assert.equal(
+    timedOut.body.order.offered_driver_id,
+    secondJoin.body.entry.driverId,
+    "a timed-out first offer must move to the next FIFO driver",
+  );
+
+  const timedOutCancelled = await request(`/orders/${timedOutOrder.id}/cancel`, {
+    method: "POST",
+    token: passengerLoginToken,
+  });
+  assert.equal(timedOutCancelled.response.status, 200);
 
   const transitOrder = await createOrder(passengerLoginToken, "C", 1);
   const transitAccept = await request(`/orders/${transitOrder.id}/accept`, {

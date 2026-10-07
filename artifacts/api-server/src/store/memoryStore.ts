@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { DRIVER_APPROACH_RADIUS_METERS } from "../utils/config";
+import { distanceMeters, isApproaching, isWithinRadius } from "../utils/geo";
 import type {
   Coordinates,
   DeviceRegistration,
@@ -167,9 +169,70 @@ class MemoryStore {
     return index === -1 ? null : index + 1;
   }
 
-  getFirstEligibleDriver(seats: number): QueueEntry | undefined {
+  getNextEligibleFifoDriver(
+    seats: number,
+    excludedDriverId?: string,
+  ): QueueEntry | undefined {
+    const queue = this.getQueue();
+    const excludedIndex = excludedDriverId
+      ? queue.findIndex((entry) => entry.driverId === excludedDriverId)
+      : -1;
+    const candidates = excludedIndex >= 0 ? queue.slice(excludedIndex + 1) : queue;
+    return candidates.find(
+      (entry) =>
+        entry.driverId !== excludedDriverId &&
+        entry.status === "searching" &&
+        entry.availableSeats >= seats,
+    );
+  }
+
+  getEligibleDriverForPickup(
+    seats: number,
+    pickupLocation: Coordinates,
+    excludedDriverId?: string,
+    pickupRadiusMeters = 150,
+    allowInTransit = false,
+  ): QueueEntry | undefined {
+    const isEligibleByLocation = (entry: QueueEntry): boolean => {
+      if (entry.driverId === excludedDriverId || entry.availableSeats < seats) {
+        return false;
+      }
+      const distance = distanceMeters(entry.lastLocation, pickupLocation);
+      return (
+        isWithinRadius(entry.lastLocation, pickupLocation, pickupRadiusMeters) ||
+        (distance <= DRIVER_APPROACH_RADIUS_METERS &&
+          isApproaching(entry.previousLocation, entry.lastLocation, pickupLocation))
+      );
+    };
+
+    const fifoCandidate = this.getQueue().find(
+      (entry) =>
+        (entry.status === "searching" ||
+          (allowInTransit && entry.status === "in_transit")) &&
+        isEligibleByLocation(entry),
+    );
+    if (fifoCandidate) {
+      return fifoCandidate;
+    }
+
+    return [...this.queueEntries.values()]
+      .filter(
+        (entry) =>
+          entry.status === "searching" ||
+          entry.status === "picking_up" ||
+          (allowInTransit && entry.status === "in_transit"),
+      )
+      .filter(isEligibleByLocation)
+      .sort((a, b) =>
+        distanceMeters(a.lastLocation, pickupLocation) -
+        distanceMeters(b.lastLocation, pickupLocation),
+      )[0];
+  }
+
+  getFirstEligibleDriver(seats: number, excludedDriverId?: string): QueueEntry | undefined {
     return [...this.queueEntries.values()].find(
       (entry) =>
+        entry.driverId !== excludedDriverId &&
         entry.status === "in_transit" &&
         entry.availableSeats >= seats &&
         Boolean(

@@ -12,6 +12,7 @@ const ru = {
   seatLocked: "Место забронировано на 7 минут",
   orderNotFound: "Заказ не найден",
   invalidStatus: "Недопустимый переход статуса",
+  driversUnavailable: "Водителей пока нет",
 } as const;
 
 export default ru;

@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import type { Server } from "socket.io";
 import { store } from "../store/memoryStore";
 import type { Coordinates, Order, OrderStatus, PickupPoint } from "../types/domain";
-import { SEAT_LOCK_TTL_MS } from "../utils/config";
+import { getDriverOfferTtlMs, SEAT_LOCK_TTL_MS } from "../utils/config";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { emitIncomingOrder, emitOrderUpdate, emitQueueUpdate } from "../utils/realtime";
@@ -84,6 +84,79 @@ function sendOrderToDriver(io: Server | undefined, order: Order, driverId: strin
   emitIncomingOrder(io, driverId, order);
 }
 
+function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?: string): Order {
+  const nextDriver = store.getEligibleDriverForPickup(
+    order.seats,
+    order.pickupLocation,
+    excludedDriverId ?? order.offeredDriverId,
+    150,
+    order.pickupPoint === "D",
+  );
+  if (!nextDriver) {
+    const updated = store.updateOrder(order.id, {
+      offeredDriverId: undefined,
+      offerExpiresAt: undefined,
+    }) as Order;
+    emitOrderUpdate(io, updated);
+    return updated;
+  }
+
+  const offerExpiresAt = Date.now() + getDriverOfferTtlMs();
+  const updated = store.updateOrder(order.id, {
+    offeredDriverId: nextDriver.driverId,
+    offerExpiresAt,
+  }) as Order;
+  sendOrderToDriver(io, updated, nextDriver.driverId);
+  emitOrderUpdate(io, updated);
+  emitQueueUpdate(io, {
+    type: "order_offered",
+    driverId: nextDriver.driverId,
+  });
+
+  setTimeout(() => {
+    const current = store.getOrder(order.id);
+    if (
+      !current ||
+      current.status !== "searching" ||
+      current.offeredDriverId !== nextDriver.driverId ||
+      !current.offerExpiresAt ||
+      current.offerExpiresAt > Date.now()
+    ) {
+      return;
+    }
+    offerNextDriver(io, current, nextDriver.driverId);
+  }, getDriverOfferTtlMs() + 10);
+
+  return updated;
+}
+
+
+export function getOrderAvailability(request: Request, response: Response): void {
+  const pickupPoint = pickEnum(
+    request.query.pickup_point ?? "C",
+    "pickup_point",
+    ["C", "D"] as const,
+  ) as PickupPoint;
+  const pickupLocation = {
+    lat: Number(request.query.lat),
+    lng: Number(request.query.lng),
+    timestamp: Date.now(),
+  };
+  if (!Number.isFinite(pickupLocation.lat) || !Number.isFinite(pickupLocation.lng)) {
+    throw new AppError(400, "pickup location is required", "VALIDATION_ERROR");
+  }
+  const seats = boundedInteger(request.query.seats ?? 1, "seats", 1, 8);
+  const driver = store.getEligibleDriverForPickup(seats, pickupLocation);
+  response.json({
+    available: Boolean(driver),
+    message: driver
+      ? "A driver is available"
+      : translate(request.auth?.locale ?? "ru", "driversUnavailable"),
+    pickup_point: pickupPoint,
+    driver_id: driver?.driverId ?? null,
+  });
+}
+
 export async function createOrder(
   request: Request,
   response: Response,
@@ -93,6 +166,23 @@ export async function createOrder(
     "C",
     "D",
   ] as const) as PickupPoint;
+  const pickupLocation = getPickupLocation(request);
+  const seats = boundedInteger(request.body?.seats ?? 1, "seats", 1, 8);
+  const availableDriver = store.getEligibleDriverForPickup(
+    seats,
+    pickupLocation,
+    undefined,
+    150,
+    pickupPoint === "D",
+  );
+  if (!availableDriver) {
+    throw new AppError(
+      409,
+      translate(request.auth?.locale ?? "ru", "driversUnavailable"),
+      "DRIVERS_UNAVAILABLE",
+    );
+  }
+
   const requestedStops = parseRouteStopCodes(request.body?.route_stops);
   const fare = calculateRouteFare({
     routeId: request.body?.route_id,
@@ -115,23 +205,36 @@ export async function createOrder(
     passengerId,
     passengerPhone: request.auth?.user.phoneNumber ?? "",
     pickupPoint,
-    pickupLocation: getPickupLocation(request),
+    pickupLocation,
     pickupAddress,
     routeStops: fare.stops,
     fare,
     destination: requiredString(request.body?.destination, "destination", 240),
-    seats: boundedInteger(request.body?.seats ?? 1, "seats", 1, 8),
+    seats,
     status: "searching",
   });
 
-  const firstDriver =
-    pickupPoint === "D"
-      ? store.getFirstEligibleDriver(order.seats)
-      : store.getQueue()[0];
+  const firstDriver = availableDriver;
   if (firstDriver) {
-    store.updateOrder(order.id, { offeredDriverId: firstDriver.driverId });
-    order.offeredDriverId = firstDriver.driverId;
+    const offered = store.updateOrder(order.id, {
+      offeredDriverId: firstDriver.driverId,
+      offerExpiresAt: Date.now() + getDriverOfferTtlMs(),
+    }) as Order;
+    Object.assign(order, offered);
     sendOrderToDriver(getSocket(request), order, firstDriver.driverId);
+    setTimeout(() => {
+      const current = store.getOrder(order.id);
+      if (
+        !current ||
+        current.status !== "searching" ||
+        current.offeredDriverId !== firstDriver.driverId ||
+        !current.offerExpiresAt ||
+        current.offerExpiresAt > Date.now()
+      ) {
+        return;
+      }
+      offerNextDriver(getSocket(request), current, firstDriver.driverId);
+    }, getDriverOfferTtlMs() + 10);
   }
 
   response.status(201).json({
@@ -184,7 +287,7 @@ export function acceptOrder(request: Request, response: Response): void {
     order.offeredDriverId === driverId &&
     queueEntry?.inFifo === false &&
     queueEntry.status === "in_transit";
-  if (!queueEntry || (!isActivePoolOffer && position !== 1)) {
+  if (!queueEntry || (!isActivePoolOffer && position !== 1 && order.offeredDriverId !== driverId)) {
     throw new AppError(409, "Only the first driver in the queue can accept this order", "FIFO_REQUIRED");
   }
   if (queueEntry.availableSeats < order.seats) {
@@ -197,6 +300,7 @@ export function acceptOrder(request: Request, response: Response): void {
   const updated = store.updateOrder(order.id, {
     driverId,
     offeredDriverId: driverId,
+    offerExpiresAt: undefined,
     status,
     seatLockExpiresAt,
   }) as Order;
@@ -239,6 +343,30 @@ export function acceptOrder(request: Request, response: Response): void {
     message: translate(request.auth?.locale ?? "ru", "seatLocked"),
     order: serializeOrder(updated, true),
     seat_lock_minutes: order.pickupPoint === "C" ? 7 : null,
+  });
+}
+
+export function rejectOrder(request: Request, response: Response): void {
+  const driverId = assertDriver(request);
+  const order = store.getOrder(String(request.params["orderId"]));
+  if (!order) {
+    throw new AppError(
+      404,
+      translate(request.auth?.locale ?? "ru", "orderNotFound"),
+      "ORDER_NOT_FOUND",
+    );
+  }
+  if (
+    order.status !== "searching" ||
+    order.offeredDriverId !== driverId
+  ) {
+    throw new AppError(409, "Order is not currently offered to this driver", "ORDER_NOT_OFFERED");
+  }
+
+  const updated = offerNextDriver(getSocket(request), order, driverId);
+  response.json({
+    order: serializeOrder(updated, true),
+    offered_driver_id: updated.offeredDriverId ?? null,
   });
 }
 

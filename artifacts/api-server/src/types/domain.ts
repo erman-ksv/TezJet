@@ -102,6 +102,7 @@ export interface QueueEntry {
   status: DriverQueueStatus;
   availableSeats: number;
   lastLocation: Coordinates;
+  previousLocation?: Coordinates;
   priorityLock: boolean;
   /** False means the driver is in an active-trip pool, not the FIFO set. */
   inFifo?: boolean;
@@ -116,6 +117,7 @@ export interface Order {
   passengerPhone: string;
   driverId?: string;
   offeredDriverId?: string;
+  offerExpiresAt?: number;
   pickupPoint: PickupPoint;
   pickupLocation: Coordinates;
   pickupAddress?: NormalizedAddress;

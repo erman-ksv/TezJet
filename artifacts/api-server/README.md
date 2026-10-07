@@ -75,12 +75,25 @@ services.
 - `POST /api/orders` — passenger creates a Point C or Point D order. Optional
   `route_stops` uses the same route catalog; when omitted, the pickup point is
   used as the pickup and destination stop, with a minimum one-stop fare.
-- `POST /api/orders/:orderId/accept` — #1 driver accepts; Point C gets a 7-minute seat lock.
+- `POST /api/orders/:orderId/accept` — only the current offer recipient can accept; Point C gets a 7-minute seat lock.
+- `POST /api/orders/:orderId/decline` — the current offer recipient declines and the same order is offered to the next eligible driver.
+- `POST /api/orders/:orderId/offer-first-driver` — retained for older Point D clients; reports the current offer recipient without sending a duplicate offer.
 - `PATCH /api/orders/:orderId/status` — driver advances `en_route_to_c` → `arrived_at_c` → `in_transit` → `completed`.
 - `POST /api/orders/:orderId/cancel` — passenger or assigned driver cancels.
 
-Point D orders are offered to the first in-transit driver with enough seats.
-Driver-facing order responses mask passenger phone numbers.
+Orders are offered one driver at a time in FIFO queue order. The current
+recipient is the only driver who can accept; a decline or the 15-second offer
+timeout advances the same order to the next available driver. Drivers without
+enough seats or with an active order are skipped without changing queue order.
+Point D orders fall back to smart-pooling only after no eligible FIFO driver
+remains. A pooled driver must be in transit, have enough free seats, have a
+fresh location within 1,500 meters of pickup, and be able to serve the new
+pickup and destination within every active order's remaining route segment.
+If there is no match, the order stays `searching`. The timeout, pickup radius,
+and maximum location age can be configured with `ORDER_OFFER_TIMEOUT_MS`,
+`SMART_POOLING_MAX_PICKUP_DISTANCE_METERS`, and
+`SMART_POOLING_MAX_LOCATION_AGE_MS`. Driver-facing order responses mask
+passenger phone numbers.
 
 The default route has two stops, Point C and Point D, and a price of 500 KZT
 per stop. Admins can change the price and stops at runtime through `/api/admin`.
@@ -114,7 +127,9 @@ removed from the FIFO queue immediately. When the driver changes the order
 status to `in_transit` (the "Go" action), the driver is removed from FIFO even
 if seats remain available. The active-trip record keeps the remaining seats and
 active order IDs, so Point D pooling can offer new passengers to that driver
-without changing the FIFO order of drivers who are still waiting.
+without changing the FIFO order of drivers who are still waiting. New Point D
+orders still go through all available FIFO drivers first; pooling is only the
+fallback after those offers are declined or expire.
 
 The current runnable adapter models the Redis design with an `inFifo` flag on
 the queue entry. A Redis-backed adapter should map FIFO membership to a sorted

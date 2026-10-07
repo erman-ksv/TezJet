@@ -212,6 +212,12 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(secondJoin.response.status, 201);
   assert.equal(secondJoin.body.position, 2);
 
+  const availabilityPassengerToken = await registerUser(
+    "+7 777 100 00 04",
+    "passenger",
+    "Availability Passenger",
+  );
+
   const unavailablePickup = {
     lat: 41.34,
     lng: 69.2797,
@@ -219,7 +225,7 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   };
   const unavailableCheck = await request(
     `/orders/availability?pickup_point=C&lat=${unavailablePickup.lat}&lng=${unavailablePickup.lng}&seats=1`,
-    { token: passengerLoginToken },
+    { token: availabilityPassengerToken },
   );
   assert.equal(unavailableCheck.response.status, 200);
   assert.equal(unavailableCheck.body.available, false);
@@ -227,7 +233,7 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
 
   const unavailableOrder = await request("/orders", {
     method: "POST",
-    token: passengerLoginToken,
+    token: availabilityPassengerToken,
     body: {
       pickup_point: "C",
       pickup_location: unavailablePickup,
@@ -260,7 +266,7 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
 
   const approachingCheck = await request(
     `/orders/availability?pickup_point=C&lat=${unavailablePickup.lat}&lng=${unavailablePickup.lng}&seats=1`,
-    { token: passengerLoginToken },
+    { token: availabilityPassengerToken },
   );
   assert.equal(approachingCheck.response.status, 200);
   assert.equal(approachingCheck.body.available, true);
@@ -268,7 +274,7 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
 
   const approachingOrder = await request("/orders", {
     method: "POST",
-    token: passengerLoginToken,
+    token: availabilityPassengerToken,
     body: {
       pickup_point: "C",
       pickup_location: {
@@ -290,7 +296,7 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
     `/orders/${approachingOrder.body.order.id}/cancel`,
     {
       method: "POST",
-      token: passengerLoginToken,
+      token: availabilityPassengerToken,
     },
   );
   assert.equal(approachingCancelled.response.status, 200);

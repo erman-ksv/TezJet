@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import type { Server } from "socket.io";
 import { store } from "../store/memoryStore";
 import type { Coordinates, Order, OrderStatus, PickupPoint } from "../types/domain";
-import { DRIVER_OFFER_TTL_MS, SEAT_LOCK_TTL_MS } from "../utils/config";
+import { getDriverOfferTtlMs, SEAT_LOCK_TTL_MS } from "../utils/config";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { emitIncomingOrder, emitOrderUpdate, emitQueueUpdate } from "../utils/realtime";
@@ -98,7 +98,7 @@ function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?
     return updated;
   }
 
-  const offerExpiresAt = Date.now() + DRIVER_OFFER_TTL_MS;
+  const offerExpiresAt = Date.now() + getDriverOfferTtlMs();
   const updated = store.updateOrder(order.id, {
     offeredDriverId: nextDriver.driverId,
     offerExpiresAt,
@@ -122,7 +122,7 @@ function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?
       return;
     }
     offerNextDriver(io, current, nextDriver.driverId);
-  }, DRIVER_OFFER_TTL_MS + 10);
+  }, getDriverOfferTtlMs() + 10);
 
   return updated;
 }
@@ -174,7 +174,7 @@ export async function createOrder(
   if (firstDriver) {
     const offered = store.updateOrder(order.id, {
       offeredDriverId: firstDriver.driverId,
-      offerExpiresAt: Date.now() + DRIVER_OFFER_TTL_MS,
+      offerExpiresAt: Date.now() + getDriverOfferTtlMs(),
     }) as Order;
     Object.assign(order, offered);
     sendOrderToDriver(getSocket(request), order, firstDriver.driverId);
@@ -190,7 +190,7 @@ export async function createOrder(
         return;
       }
       offerNextDriver(getSocket(request), current, firstDriver.driverId);
-    }, DRIVER_OFFER_TTL_MS + 10);
+    }, getDriverOfferTtlMs() + 10);
   }
 
   response.status(201).json({

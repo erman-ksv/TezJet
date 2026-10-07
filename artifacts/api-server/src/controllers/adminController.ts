@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { store } from "../store/memoryStore";
 import type { DriverApprovalStatus } from "../types/domain";
-import { PYATAK_ZONE, updatePyatakCenter } from "../utils/config";
+import { getDriverOfferTtlMs, PYATAK_ZONE, setDriverOfferTtlMs, updatePyatakCenter } from "../utils/config";
 import { isValidCoordinates } from "../utils/geo";
 import { AppError } from "../utils/errors";
 import { serializeUser } from "../utils/serialize";
@@ -58,6 +58,26 @@ function serializeQueuePoint() {
     center: { ...PYATAK_ZONE.center },
     geofence_meters: PYATAK_ZONE.radiusMeters,
   };
+}
+
+export function getDriverOfferSettings(_request: Request, response: Response): void {
+  response.json({
+    driver_offer_timeout_seconds: getDriverOfferTtlMs() / 1000,
+  });
+}
+
+export function updateDriverOfferSettings(request: Request, response: Response): void {
+  const seconds = boundedInteger(
+    request.body?.driver_offer_timeout_seconds,
+    "driver_offer_timeout_seconds",
+    1,
+    300,
+  );
+  setDriverOfferTtlMs(seconds * 1000);
+  response.json({
+    message: "Driver offer timeout updated",
+    driver_offer_timeout_seconds: seconds,
+  });
 }
 
 export function getQueuePoint(_request: Request, response: Response): void {

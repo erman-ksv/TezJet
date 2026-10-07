@@ -159,6 +159,7 @@ before(async () => {
       NODE_ENV: "test",
       PORT: String(port),
       SESSION_SECRET: "tezjet-test-session-secret",
+      DRIVER_OFFER_TTL_MS: "50",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -284,6 +285,48 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
       assert.equal(entry.status, expectedQueueStatus);
     }
   }
+
+  const rejectedOrder = await createOrder(passengerLoginToken, "C", 1);
+  assert.equal(rejectedOrder.offered_driver_id, firstJoin.body.entry.driverId);
+
+  const rejected = await request(`/orders/${rejectedOrder.id}/reject`, {
+    method: "POST",
+    token: driverOneToken,
+  });
+  assert.equal(rejected.response.status, 200);
+  assert.equal(rejected.body.offered_driver_id, secondJoin.body.entry.driverId);
+
+  const fallbackAccepted = await request(`/orders/${rejectedOrder.id}/accept`, {
+    method: "POST",
+    token: driverTwoToken,
+  });
+  assert.equal(fallbackAccepted.response.status, 200);
+  assert.equal(fallbackAccepted.body.order.driver_id, secondJoin.body.entry.driverId);
+
+  const fallbackCancelled = await request(`/orders/${rejectedOrder.id}/cancel`, {
+    method: "POST",
+    token: passengerLoginToken,
+  });
+  assert.equal(fallbackCancelled.response.status, 200);
+
+  const timedOutOrder = await createOrder(passengerLoginToken, "C", 1);
+  assert.equal(timedOutOrder.offered_driver_id, firstJoin.body.entry.driverId);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const timedOut = await request(`/orders/${timedOutOrder.id}`, {
+    token: passengerLoginToken,
+  });
+  assert.equal(timedOut.response.status, 200);
+  assert.equal(
+    timedOut.body.order.offered_driver_id,
+    secondJoin.body.entry.driverId,
+    "a timed-out first offer must move to the next FIFO driver",
+  );
+
+  const timedOutCancelled = await request(`/orders/${timedOutOrder.id}/cancel`, {
+    method: "POST",
+    token: passengerLoginToken,
+  });
+  assert.equal(timedOutCancelled.response.status, 200);
 
   const transitOrder = await createOrder(passengerLoginToken, "C", 1);
   const transitAccept = await request(`/orders/${transitOrder.id}/accept`, {

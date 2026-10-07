@@ -9,6 +9,9 @@ export const QUEUE_GEOFENCE_METERS = Number(
 );
 export const MAX_SPEED_KMH = 180;
 export const SEAT_LOCK_TTL_MS = 7 * 60 * 1000;
+export const DRIVER_APPROACH_RADIUS_METERS = Number(
+  process.env.DRIVER_APPROACH_RADIUS_METERS ?? 5000,
+);
 const configuredDriverOfferTtlMs = Number(process.env.DRIVER_OFFER_TTL_MS ?? 60 * 1000);
 let driverOfferTtlMs = Number.isFinite(configuredDriverOfferTtlMs) && configuredDriverOfferTtlMs > 0
   ? configuredDriverOfferTtlMs

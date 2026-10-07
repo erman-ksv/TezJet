@@ -85,7 +85,10 @@ function sendOrderToDriver(io: Server | undefined, order: Order, driverId: strin
 }
 
 function offerNextDriver(io: Server | undefined, order: Order, excludedDriverId?: string): Order {
-  const nextDriver = store.getNextEligibleFifoDriver(order.seats, excludedDriverId);
+  const nextDriver =
+    order.pickupPoint === "D"
+      ? store.getFirstEligibleDriver(order.seats, excludedDriverId)
+      : store.getNextEligibleFifoDriver(order.seats, excludedDriverId);
   if (!nextDriver) {
     const updated = store.updateOrder(order.id, {
       offeredDriverId: undefined,
@@ -240,7 +243,7 @@ export function acceptOrder(request: Request, response: Response): void {
     order.offeredDriverId === driverId &&
     queueEntry?.inFifo === false &&
     queueEntry.status === "in_transit";
-  if (!queueEntry || (!isActivePoolOffer && position !== 1)) {
+  if (!queueEntry || (!isActivePoolOffer && position !== 1 && order.offeredDriverId !== driverId)) {
     throw new AppError(409, "Only the first driver in the queue can accept this order", "FIFO_REQUIRED");
   }
   if (queueEntry.availableSeats < order.seats) {

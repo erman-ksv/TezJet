@@ -5,10 +5,12 @@ import {
   createRoute,
   deleteRoute,
   deleteStop,
+  getDriverOfferSettings,
   getQueuePoint,
   listDrivers,
   listRoutes,
   updateDriverApproval,
+  updateDriverOfferSettings,
   updateQueuePoint,
   updateRoute,
   updateStop,
@@ -25,6 +27,8 @@ router.post("/admin/routes/:routeId/stops", ...adminOnly, addStop);
 router.patch("/admin/routes/:routeId/stops/:stopId", ...adminOnly, updateStop);
 router.delete("/admin/routes/:routeId/stops/:stopId", ...adminOnly, deleteStop);
 router.get("/admin/drivers", ...adminOnly, listDrivers);
+router.get("/admin/settings/driver-offer", ...adminOnly, getDriverOfferSettings);
+router.patch("/admin/settings/driver-offer", ...adminOnly, updateDriverOfferSettings);
 router.get("/admin/queue-point", ...adminOnly, getQueuePoint);
 router.patch("/admin/queue-point", ...adminOnly, updateQueuePoint);
 router.patch(

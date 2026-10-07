@@ -11,6 +11,7 @@ export type QueueEventType =
   | "location"
   | "reordered"
   | "order_assigned"
+  | "order_offered"
   | "order_released"
   | "seat_lock_expired";
 

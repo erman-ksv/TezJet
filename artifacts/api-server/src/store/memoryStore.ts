@@ -167,6 +167,18 @@ class MemoryStore {
     return index === -1 ? null : index + 1;
   }
 
+  getNextEligibleFifoDriver(
+    seats: number,
+    excludedDriverId?: string,
+  ): QueueEntry | undefined {
+    return this.getQueue().find(
+      (entry) =>
+        entry.driverId !== excludedDriverId &&
+        entry.status === "searching" &&
+        entry.availableSeats >= seats,
+    );
+  }
+
   getFirstEligibleDriver(seats: number): QueueEntry | undefined {
     return [...this.queueEntries.values()].find(
       (entry) =>

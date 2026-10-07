@@ -213,7 +213,7 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(secondJoin.body.position, 2);
 
   const unavailablePickup = {
-    lat: 41.35,
+    lat: 41.34,
     lng: 69.2797,
     timestamp: Date.now() + 120_000,
   };

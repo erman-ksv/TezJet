@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import { ArrowUp, Car, ChevronDown, Crosshair, MapPin, Menu, Navigation, Search, UserRound, X } from "lucide-react";
 
-type RideState = "idle" | "searching" | "confirmed";
+type RideState = "idle" | "searching" | "confirmed" | "error";
 
 export default function App() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [rideState, setRideState] = useState<RideState>("idle");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);\n  const [token, setToken] = useState(() => localStorage.getItem("tezjet_access_token") ?? "");\n  const [phone, setPhone] = useState("");\n  const [fullName, setFullName] = useState("");\n  const [otp, setOtp] = useState("");\n  const [otpRequested, setOtpRequested] = useState(false);\n  const [authBusy, setAuthBusy] = useState(false);\n  const [error, setError] = useState("");
 
   const canOrder = Boolean(from.trim() && to.trim());
 
@@ -84,15 +84,15 @@ export default function App() {
           <button className="search-button" aria-label="Выбрать пункт назначения"><ChevronDown size={18} /></button>
         </div>
 
-        <div className="ride-options">
+        {!token && (\n          <div className="auth-box">\n            <strong>Войдите, чтобы заказать</strong>\n            {!otpRequested ? (\n              <>\n                <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ваше имя" />\n                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+7 700 000 00 00" inputMode="tel" />\n                <button onClick={requestOtp} disabled={authBusy || !phone.trim() || !fullName.trim()}>{authBusy ? "Отправляем…" : "Получить код"}</button>\n              </>\n            ) : (\n              <>\n                <input value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="Код из SMS" inputMode="numeric" />\n                <button onClick={verifyOtp} disabled={authBusy || !otp.trim()}>{authBusy ? "Проверяем…" : "Войти"}</button>\n              </>\n            )}\n            {error && <span className="auth-error">{error}</span>}\n          </div>\n        )}\n\n        <div className="ride-options">
           <div className="ride-option active">
             <Car size={20} />
             <div><strong>Tez</strong><span>Обычная поездка</span></div>
-            <b>от 15 000 сум</b>
+            <b>от 500 ₸</b>
           </div>
         </div>
 
-        <button className="order-button" disabled={!canOrder || rideState === "searching"} onClick={orderRide}>
+        <button className="order-button" disabled={!canOrder || !token || rideState === "searching"} onClick={orderRide}>
           {rideState === "searching" ? "Поиск водителя…" : rideState === "confirmed" ? "Поездка подтверждена" : "Заказать поездку"}
           {rideState === "idle" && <ArrowUp size={20} />}
         </button>

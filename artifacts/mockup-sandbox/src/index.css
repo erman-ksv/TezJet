@@ -60,3 +60,10 @@ h1 { margin: 0; font-size: 24px; letter-spacing: -.6px; }
 
 @media (min-width: 760px) { .booking-sheet { bottom: 24px; left: 24px; right: auto; width: 430px; } .locate-button { bottom: 48%; right: 30px; } }
 @media (max-height: 700px) { .booking-sheet { padding-top: 8px; } .ride-options { margin: 8px 0; } .location-box { min-height: 48px; } .order-button { height: 50px; } }
+
+.auth-box { margin: 12px 0; padding: 13px; border: 1px solid #e8e9ec; border-radius: 17px; background: #fafafa; display: grid; gap: 8px; }
+.auth-box strong { font-size: 13px; }
+.auth-box input { height: 44px; border: 1px solid #e2e4e8; border-radius: 12px; padding: 0 12px; outline: none; background: white; }
+.auth-box button { height: 44px; border: 0; border-radius: 12px; background: #111318; color: white; font-weight: 700; }
+.auth-box button:disabled { opacity: .45; }
+.auth-error { color: #c53b3b; font-size: 12px; }

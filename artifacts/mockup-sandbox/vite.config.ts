@@ -56,6 +56,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    proxy: {
+      "/api": apiTarget,
+    },
     port,
     host: "0.0.0.0",
     allowedHosts: true,

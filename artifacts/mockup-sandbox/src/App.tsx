@@ -1,146 +1,102 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useMemo, useState } from "react";
+import { ArrowUp, Car, ChevronDown, Crosshair, MapPin, Menu, Navigation, Search, UserRound, X } from "lucide-react";
 
-import { modules as discoveredModules } from "./.generated/mockup-components";
+type RideState = "idle" | "searching" | "confirmed";
 
-type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
+export default function App() {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [rideState, setRideState] = useState<RideState>("idle");
+  const [menuOpen, setMenuOpen] = useState(false);
 
-function _resolveComponent(
-  mod: Record<string, unknown>,
-  name: string,
-): ComponentType | undefined {
-  const fns = Object.values(mod).filter(
-    (v) => typeof v === "function",
-  ) as ComponentType[];
-  return (
-    (mod.default as ComponentType) ||
-    (mod.Preview as ComponentType) ||
-    (mod[name] as ComponentType) ||
-    fns[fns.length - 1]
-  );
-}
+  const canOrder = Boolean(from.trim() && to.trim());
 
-function PreviewRenderer({
-  componentPath,
-  modules,
-}: {
-  componentPath: string;
-  modules: ModuleMap;
-}) {
-  const [Component, setComponent] = useState<ComponentType | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const statusText = useMemo(() => {
+    if (rideState === "searching") return "Ищем ближайшего водителя…";
+    if (rideState === "confirmed") return "Водитель найден";
+    return "Куда едем?";
+  }, [rideState]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    setComponent(null);
-    setError(null);
-
-    async function loadComponent(): Promise<void> {
-      const key = `./components/mockups/${componentPath}.tsx`;
-      const loader = modules[key];
-      if (!loader) {
-        setError(`No component found at ${componentPath}.tsx`);
-        return;
-      }
-
-      try {
-        const mod = await loader();
-        if (cancelled) {
-          return;
-        }
-        const name = componentPath.split("/").pop()!;
-        const comp = _resolveComponent(mod, name);
-        if (!comp) {
-          setError(
-            `No exported React component found in ${componentPath}.tsx\n\nMake sure the file has at least one exported function component.`,
-          );
-          return;
-        }
-        setComponent(() => comp);
-      } catch (e) {
-        if (cancelled) {
-          return;
-        }
-
-        const message = e instanceof Error ? e.message : String(e);
-        setError(`Failed to load preview.\n${message}`);
-      }
-    }
-
-    void loadComponent();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [componentPath, modules]);
-
-  if (error) {
-    return (
-      <pre style={{ color: "red", padding: "2rem", fontFamily: "system-ui" }}>
-        {error}
-      </pre>
-    );
+  function orderRide() {
+    if (!canOrder) return;
+    setRideState("searching");
+    window.setTimeout(() => setRideState("confirmed"), 1600);
   }
 
-  if (!Component) return null;
-
-  return <Component />;
-}
-
-function getBasePath(): string {
-  return import.meta.env.BASE_URL.replace(/\/$/, "");
-}
-
-function getPreviewExamplePath(): string {
-  const basePath = getBasePath();
-  return `${basePath}/preview/ComponentName`;
-}
-
-function Gallery() {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
-      <div className="text-center max-w-md">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-3">
-          Component Preview Server
-        </h1>
-        <p className="text-gray-500 mb-4">
-          This server renders individual components for the workspace canvas.
-        </p>
-        <p className="text-sm text-gray-400">
-          Access component previews at{" "}
-          <code className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
-            {getPreviewExamplePath()}
-          </code>
-        </p>
-      </div>
-    </div>
+    <main className="tezjet-shell">
+      <section className="map-stage" aria-label="Карта TezJet">
+        <div className="map-grid" />
+        <div className="map-road road-a" />
+        <div className="map-road road-b" />
+        <div className="map-road road-c" />
+        <div className="map-water" />
+        <div className="map-label label-a">Центр</div>
+        <div className="map-label label-b">Юнусабад</div>
+        <div className="map-label label-c">Чиланзар</div>
+
+        <button className="floating-icon menu-button" onClick={() => setMenuOpen((v) => !v)} aria-label="Меню">
+          {menuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+
+        <div className="brand">Tez<span>Jet</span></div>
+
+        <button className="floating-icon locate-button" aria-label="Моё местоположение">
+          <Crosshair size={21} />
+        </button>
+
+        <div className="route-line" />
+        <div className="pin pin-from"><MapPin size={25} /></div>
+        <div className="pin pin-to"><Navigation size={23} /></div>
+
+        {rideState === "confirmed" && (
+          <div className="driver-card">
+            <div className="driver-avatar"><Car size={22} /></div>
+            <div>
+              <strong>Водитель рядом</strong>
+              <span>Белый Chevrolet • 2 мин</span>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="booking-sheet">
+        <div className="sheet-handle" />
+        <div className="sheet-heading">
+          <div>
+            <p className="eyebrow">TEZJET</p>
+            <h1>{statusText}</h1>
+          </div>
+          <button className="profile-button" aria-label="Профиль"><UserRound size={19} /></button>
+        </div>
+
+        <div className="location-box">
+          <div className="location-dot pickup" />
+          <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="Откуда" aria-label="Откуда" />
+          <button className="search-button" aria-label="Выбрать точку подачи"><Search size={18} /></button>
+        </div>
+
+        <div className="location-connector" />
+
+        <div className="location-box">
+          <div className="location-dot destination" />
+          <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Куда" aria-label="Куда" />
+          <button className="search-button" aria-label="Выбрать пункт назначения"><ChevronDown size={18} /></button>
+        </div>
+
+        <div className="ride-options">
+          <div className="ride-option active">
+            <Car size={20} />
+            <div><strong>Tez</strong><span>Обычная поездка</span></div>
+            <b>от 15 000 сум</b>
+          </div>
+        </div>
+
+        <button className="order-button" disabled={!canOrder || rideState === "searching"} onClick={orderRide}>
+          {rideState === "searching" ? "Поиск водителя…" : rideState === "confirmed" ? "Поездка подтверждена" : "Заказать поездку"}
+          {rideState === "idle" && <ArrowUp size={20} />}
+        </button>
+      </section>
+    </main>
   );
 }
-
-function getPreviewPath(): string | null {
-  const basePath = getBasePath();
-  const { pathname } = window.location;
-  const local =
-    basePath && pathname.startsWith(basePath)
-      ? pathname.slice(basePath.length) || "/"
-      : pathname;
-  const match = local.match(/^\/preview\/(.+)$/);
-  return match ? match[1] : null;
-}
-
-function App() {
-  const previewPath = getPreviewPath();
-
-  if (previewPath) {
-    return (
-      <PreviewRenderer
-        componentPath={previewPath}
-        modules={discoveredModules}
-      />
-    );
-  }
-
-  return <Gallery />;
-}
-
-export default App;

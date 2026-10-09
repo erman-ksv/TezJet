@@ -41,6 +41,10 @@ jobs:
         run: pnpm run typecheck
 
       - name: Build
+        env:
+          PORT: 5173
+          BASE_PATH: /
+          API_URL: http://localhost:8080
         run: pnpm run build
 
       - name: API tests

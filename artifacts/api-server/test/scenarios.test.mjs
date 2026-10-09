@@ -257,13 +257,33 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(firstJoin.body.position, 1);
   assert.equal((await driverOneJoinEvent).event, "joined");
 
+  const driverTwoStartLocation = {
+    ...queueLocation,
+    lng: queueLocation.lng + 0.006,
+    timestamp: Date.now(),
+  };
   const secondJoin = await request("/queue/join", {
     method: "POST",
     token: driverTwoToken,
-    body: { location: queueLocation, available_seats: 3 },
+    body: { location: driverTwoStartLocation, available_seats: 3 },
   });
   assert.equal(secondJoin.response.status, 201);
   assert.equal(secondJoin.body.position, 2);
+
+  const driverTwoApproachingLocation = {
+    ...queueLocation,
+    lng: queueLocation.lng + 0.003,
+    timestamp: driverTwoStartLocation.timestamp + 10_000,
+  };
+  const driverTwoLocationUpdate = await request("/queue/location", {
+    method: "PATCH",
+    token: driverTwoToken,
+    body: { location: driverTwoApproachingLocation },
+  });
+  assert.equal(driverTwoLocationUpdate.response.status, 200);
+  assert.equal(driverTwoLocationUpdate.body.entry.previousLocation.lng, driverTwoStartLocation.lng);
+  assert.equal(driverTwoLocationUpdate.body.entry.lastLocation.lng, driverTwoApproachingLocation.lng);
+  assert.ok(Math.abs(driverTwoApproachingLocation.lng - queueLocation.lng) > 0.002, "driver remains outside the 150m queue geofence");
 
   const firstOrderIncoming = waitForSocketEvent(
     driverOneSocket,

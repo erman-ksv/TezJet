@@ -229,7 +229,7 @@ export default function App() {
           method: "POST",
           body: JSON.stringify({
             route_id: ROUTE_ID,
-            pickup_point: "C",
+            pickup_point: pickup.code,
             pickup_stop: pickup.code,
             destination_stop: destination.code,
             pickup_location: location,

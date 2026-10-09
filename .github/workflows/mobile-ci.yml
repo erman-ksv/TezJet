@@ -1,0 +1,42 @@
+name: TezJet Mobile CI
+
+on:
+  pull_request:
+    paths:
+      - "mobile/tezjet-app/**"
+      - ".github/workflows/mobile-ci.yml"
+  push:
+    branches:
+      - "feature/tezjet-unified-mobile-expo"
+    paths:
+      - "mobile/tezjet-app/**"
+      - ".github/workflows/mobile-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile/tezjet-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install mobile dependencies
+        run: pnpm install
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Export Android and iOS bundles
+        env:
+          EXPO_PUBLIC_API_URL: https://api.example.invalid
+        run: pnpm exec expo export --platform android --platform ios

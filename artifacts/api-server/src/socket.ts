@@ -27,7 +27,7 @@ export function createRealtimeServer(httpServer: HttpServer): Server {
       user.sessionVersion !== claims.sessionVersion ||
       !canUseRole(user, claims.role) ||
       (REQUIRE_DRIVER_APPROVAL &&
-        user.role === "driver" &&
+        claims.role === "driver" &&
         user.driverApprovalStatus !== "approved")
     ) {
       next(new Error("Unauthorized"));

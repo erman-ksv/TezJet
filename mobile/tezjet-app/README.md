@@ -18,6 +18,6 @@ Expo EAS can build an Android preview APK and iOS production binary. An Expo acc
 
 - Native React Native components and Expo configuration.
 - Passenger OTP, route stops, fare estimate, and order creation wired to current API endpoints.
-- Foreground location is requested only after user action; order creation can continue without coordinates if permission is declined.
+- Foreground location is requested only after user action. The current API requires pickup coordinates, so order creation stops with a clear message if permission is declined.
 - Driver mode is not operational yet. Passenger accounts must not be allowed to receive or accept driver orders.
 - API connectivity, device testing, automated typecheck, and EAS builds still need verification before production use.

@@ -74,6 +74,7 @@ export default function App() {
   const [pickupCode, setPickupCode] = useState("");
   const [destinationCode, setDestinationCode] = useState("");
   const [pickupAddress, setPickupAddress] = useState("");
+  const [pickupLocation, setPickupLocation] = useState<{ lat: number; lng: number; timestamp: number; isMocked: false } | null>(null);
   const [seats, setSeats] = useState(1);
   const [fare, setFare] = useState<Fare | null>(null);
   const [fareBusy, setFareBusy] = useState(false);
@@ -219,7 +220,8 @@ export default function App() {
     setRideError("");
     setRideMessage("");
     try {
-      const location = await getBrowserLocation();
+      const location = pickupLocation ?? await getBrowserLocation();
+      setPickupLocation(location);
       const result = await api<{ order: { id: string; status: string }; offer: unknown }>(
         "/api/orders",
         token,
@@ -272,8 +274,12 @@ export default function App() {
         <div className="brand" aria-label="TezJet"><span className="brand-mark">T</span><span>tez</span><b>jet</b></div>
         <div className="map-caption"><span className="live-dot" /> ПЛАНИРОВАНИЕ ПОЕЗДКИ</div>
         <button className="floating-icon locate-button" onClick={() => {
+          setRideError("");
           getBrowserLocation()
-            .then(() => setRideError("Местоположение определено. Оно будет использовано при оформлении заказа."))
+            .then((location) => {
+              setPickupLocation(location);
+              setRideError("");
+            })
             .catch((error) => setRideError(error instanceof Error ? error.message : "Геолокация недоступна."));
         }} aria-label="Определить местоположение">
           <Crosshair size={20} />

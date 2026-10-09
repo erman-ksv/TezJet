@@ -18,6 +18,10 @@ jobs:
     name: Typecheck, build, and tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      PORT: 5173
+      BASE_PATH: /
+      API_URL: http://localhost:8080
 
     steps:
       - name: Checkout

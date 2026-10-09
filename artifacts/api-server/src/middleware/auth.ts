@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { AuthContext } from "../types/express";
 import { store } from "../store/memoryStore";
 import { REQUIRE_DRIVER_APPROVAL } from "../utils/config";
+import { canUseRole } from "../utils/roleAccess";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { verifyAccessToken } from "../utils/token";
@@ -27,14 +28,14 @@ export function authenticate(
     !claims ||
     !user ||
     user.sessionVersion !== claims.sessionVersion ||
-    user.role !== claims.role
+    !canUseRole(user, claims.role)
   ) {
     throw new AppError(401, translate("ru", "unauthorized"), "UNAUTHORIZED");
   }
 
   const auth: AuthContext = {
     userId: user.id,
-    role: user.role,
+    role: claims.role,
     locale: user.locale,
     user,
   };

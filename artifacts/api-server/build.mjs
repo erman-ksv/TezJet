@@ -118,6 +118,18 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  // Emit the pickup eligibility service separately so its unit tests can import
+  // the same compiled module used by the API bundle.
+  await esbuild({
+    entryPoints: [path.resolve(artifactDir, "src/services/pickupProximity.ts")],
+    outfile: path.resolve(distDir, "services/pickupProximity.mjs"),
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    sourcemap: "linked",
+    logLevel: "info",
+  });
 }
 
 buildAll().catch((err) => {

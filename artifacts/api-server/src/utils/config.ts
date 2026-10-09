@@ -13,7 +13,7 @@ export const ADMIN_PHONE = process.env.ADMIN_PHONE
   ? process.env.ADMIN_PHONE.replace(/[^\d+]/g, "")
   : undefined;
 export const REQUIRE_DRIVER_APPROVAL =
-  process.env.REQUIRE_DRIVER_APPROVAL === "true";
+  process.env.REQUIRE_DRIVER_APPROVAL !== "false";
 export const PYATAK_ZONE: {
   id: string;
   name: string;

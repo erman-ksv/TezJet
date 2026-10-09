@@ -17,11 +17,11 @@ function getLocale(request: Request, value: unknown): Locale {
   return pickEnum(value ?? request.auth?.locale ?? "ru", "locale", locales);
 }
 
-function issueToken(userId: string): string {
+function issueToken(userId: string, activeRole: UserRole): string {
   const user = store.invalidateSessions(userId);
   return createAccessToken({
     sub: user.id,
-    role: user.role,
+    role: activeRole,
     locale: user.locale,
     sessionVersion: user.sessionVersion,
     sessionId: randomUUID(),
@@ -69,20 +69,32 @@ export function verifyOtp(request: Request, response: Response): void {
   if (!user) {
     const fullName = requiredString(challenge.fullName ?? request.body?.full_name, "full_name", 120);
     user = store.createUser({
-      role: challenge.role,
+      role: challenge.role === "driver" ? "passenger" : challenge.role,
       fullName,
       phoneNumber,
       locale: challenge.locale,
     });
-  } else if (user.role !== challenge.role && challenge.role === "admin") {
+    if (challenge.role === "driver") {
+      user = store.updateUser(user.id, { driverApprovalStatus: "pending" });
+    }
+  } else if (challenge.role === "admin" && user.role !== "admin") {
     throw new AppError(403, "Admin role cannot be assigned to this account", "ADMIN_ROLE_FORBIDDEN");
+  } else if (challenge.role === "driver") {
+    if (user.role === "admin") {
+      throw new AppError(403, "Admin accounts cannot use driver mode", "DRIVER_PROFILE_FORBIDDEN");
+    }
+    if (!user.driverApprovalStatus) {
+      user = store.updateUser(user.id, { driverApprovalStatus: "pending" });
+    }
   }
 
-  const token = issueToken(user.id);
+  const activeRole: UserRole =
+    user.role === "admin" ? "admin" : challenge.role === "driver" ? "driver" : "passenger";
+  const token = issueToken(user.id, activeRole);
   response.json({
     access_token: token,
     token_type: "Bearer",
-    user: serializeUser(user),
+    user: { ...serializeUser(user), active_role: activeRole },
     session_policy: "previous_tokens_invalidated",
   });
 }
@@ -91,7 +103,7 @@ export function getCurrentUser(request: Request, response: Response): void {
   if (!request.auth) {
     throw new AppError(401, translate("ru", "unauthorized"), "UNAUTHORIZED");
   }
-  response.json({ user: serializeUser(request.auth.user) });
+  response.json({ user: { ...serializeUser(request.auth.user), active_role: request.auth.role } });
 }
 
 export function updateProfile(request: Request, response: Response): void {

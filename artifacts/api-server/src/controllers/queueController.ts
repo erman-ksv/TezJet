@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { store } from "../store/memoryStore";
+import { MAX_APPROACHING_PICKUP_RADIUS_METERS } from "../services/pickupProximity";
 import type { Coordinates, DriverQueueStatus } from "../types/domain";
 import { PYATAK_ZONE, REQUIRE_DRIVER_APPROVAL } from "../utils/config";
 import { isWithinRadius } from "../utils/geo";
@@ -53,6 +54,7 @@ export function getQueueStatus(request: Request, response: Response): void {
     },
     queue_point: PYATAK_ZONE.center,
     geofence_meters: PYATAK_ZONE.radiusMeters,
+    service_radius_meters: MAX_APPROACHING_PICKUP_RADIUS_METERS,
     queue: store.queueSnapshot(),
     your_position: request.auth
       ? store.getQueuePosition(request.auth.userId)
@@ -63,7 +65,7 @@ export function getQueueStatus(request: Request, response: Response): void {
 export function joinQueue(request: Request, response: Response): void {
   const driverId = assertDriver(request);
   const location = getLocation(request);
-  if (!isWithinRadius(location, PYATAK_ZONE.center, PYATAK_ZONE.radiusMeters)) {
+  if (!isWithinRadius(location, PYATAK_ZONE.center, MAX_APPROACHING_PICKUP_RADIUS_METERS)) {
     throw new AppError(
       422,
       translate(request.auth?.locale ?? "ru", "outsideGeofence"),
@@ -129,16 +131,6 @@ export function updateQueueLocation(request: Request, response: Response): void 
   const current = store.getQueueEntry(driverId);
   if (!current) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
-  }
-  if (
-    current.status === "searching" &&
-    !isWithinRadius(location, PYATAK_ZONE.center, PYATAK_ZONE.radiusMeters)
-  ) {
-    throw new AppError(
-      422,
-      translate(request.auth?.locale ?? "ru", "outsideGeofence"),
-      "OUTSIDE_QUEUE_GEOFENCE",
-    );
   }
   const entry = store.updateQueueEntry(driverId, { lastLocation: location });
   if (!entry) {

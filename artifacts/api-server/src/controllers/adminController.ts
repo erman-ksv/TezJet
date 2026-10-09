@@ -197,7 +197,7 @@ export function deleteStop(request: Request, response: Response): void {
 
 export function listDrivers(_request: Request, response: Response): void {
   response.json({
-    drivers: store.listUsers("driver").map((user) => serializeUser(user)),
+    drivers: store.listUsers().filter((user) => user.driverApprovalStatus !== undefined).map((user) => serializeUser(user)),
   });
 }
 

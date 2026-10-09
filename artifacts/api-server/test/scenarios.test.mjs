@@ -113,7 +113,7 @@ async function registerUser(phoneNumber, role, fullName) {
     },
   });
   assert.equal(verification.response.status, 200);
-  assert.equal(verification.body.user.role, role);
+  assert.equal(verification.body.user.active_role, role);
   return verification.body.access_token;
 }
 
@@ -159,6 +159,8 @@ before(async () => {
       NODE_ENV: "test",
       PORT: String(port),
       SESSION_SECRET: "tezjet-test-session-secret",
+      ADMIN_PHONE: "+7 777 100 00 99",
+      REQUIRE_DRIVER_APPROVAL: "true",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -185,8 +187,60 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(currentMe.response.status, 200);
   assert.equal(currentMe.body.user.phone_number, "+77771000001");
 
+  const adminToken = await registerUser("+7 777 100 00 99", "admin", "Test Admin");
   const driverOneToken = await registerUser("+7 777 100 00 02", "driver", "Driver One");
+  const driverOneProfile = await request("/auth/me", { token: driverOneToken });
+  assert.equal(driverOneProfile.body.user.role, "passenger", "driver mode belongs to the same passenger account");
+  assert.equal(driverOneProfile.body.user.active_role, "driver");
+  assert.equal(driverOneProfile.body.user.driver_approval_status, "pending");
+
+  const pendingJoin = await request("/queue/join", {
+    method: "POST",
+    token: driverOneToken,
+    body: { location: queueLocation, available_seats: 3 },
+  });
+  assert.equal(pendingJoin.response.status, 403);
+  assert.equal(pendingJoin.body.error.code, "DRIVER_NOT_APPROVED");
+
+  const pendingAccept = await request("/orders/not-created/accept", {
+    method: "POST",
+    token: driverOneToken,
+  });
+  assert.equal(pendingAccept.response.status, 403);
+  assert.equal(pendingAccept.body.error.code, "DRIVER_NOT_APPROVED");
+
+  const pendingSocket = io(socketUrl, {
+    auth: { token: driverOneToken },
+    path: "/api/socket.io",
+    transports: ["websocket"],
+  });
+  sockets.push(pendingSocket);
+  const socketRejection = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Pending driver socket was not rejected")), 5_000);
+    pendingSocket.once("connect_error", (error) => { clearTimeout(timeout); resolve(error); });
+    pendingSocket.once("connect", () => { clearTimeout(timeout); reject(new Error("Pending driver socket connected")); });
+  });
+  assert.match(socketRejection.message, /Unauthorized/);
+
+  const approval = await request(`/admin/drivers/${driverOneProfile.body.user.id}/approval`, {
+    method: "PATCH",
+    token: adminToken,
+    body: { status: "approved" },
+  });
+  assert.equal(approval.response.status, 200);
+  assert.equal(approval.body.driver.driver_approval_status, "approved");
+  const listedDrivers = await request("/admin/drivers", { token: adminToken });
+  assert.ok(listedDrivers.body.drivers.some((driver) => driver.id === driverOneProfile.body.user.id));
+
   const driverTwoToken = await registerUser("+7 777 100 00 03", "driver", "Driver Two");
+  const driverTwoProfile = await request("/auth/me", { token: driverTwoToken });
+  const driverTwoApproval = await request(`/admin/drivers/${driverTwoProfile.body.user.id}/approval`, {
+    method: "PATCH",
+    token: adminToken,
+    body: { status: "approved" },
+  });
+  assert.equal(driverTwoApproval.response.status, 200);
+
   const driverOneSocket = await connectSocket(driverOneToken);
 
   const driverOneJoinEvent = waitForSocketEvent(
@@ -203,13 +257,33 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(firstJoin.body.position, 1);
   assert.equal((await driverOneJoinEvent).event, "joined");
 
+  const driverTwoStartLocation = {
+    ...queueLocation,
+    lng: queueLocation.lng + 0.006,
+    timestamp: Date.now(),
+  };
   const secondJoin = await request("/queue/join", {
     method: "POST",
     token: driverTwoToken,
-    body: { location: queueLocation, available_seats: 3 },
+    body: { location: driverTwoStartLocation, available_seats: 3 },
   });
   assert.equal(secondJoin.response.status, 201);
   assert.equal(secondJoin.body.position, 2);
+
+  const driverTwoApproachingLocation = {
+    ...queueLocation,
+    lng: queueLocation.lng + 0.003,
+    timestamp: driverTwoStartLocation.timestamp + 10_000,
+  };
+  const driverTwoLocationUpdate = await request("/queue/location", {
+    method: "PATCH",
+    token: driverTwoToken,
+    body: { location: driverTwoApproachingLocation },
+  });
+  assert.equal(driverTwoLocationUpdate.response.status, 200);
+  assert.equal(driverTwoLocationUpdate.body.entry.previousLocation.lng, driverTwoStartLocation.lng);
+  assert.equal(driverTwoLocationUpdate.body.entry.lastLocation.lng, driverTwoApproachingLocation.lng);
+  assert.ok(Math.abs(driverTwoApproachingLocation.lng - queueLocation.lng) > 0.002, "driver remains outside the 150m queue geofence");
 
   const firstOrderIncoming = waitForSocketEvent(
     driverOneSocket,
@@ -319,4 +393,29 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(pooling.response.status, 200);
   assert.equal(pooling.body.smart_pooling, true);
   assert.equal(pooling.body.order.offered_driver_id, firstJoin.body.entry.driverId);
+
+  const passengerModeOtp = await request("/auth/request-otp", {
+    method: "POST",
+    body: { phone_number: "+7 777 100 00 02", role: "passenger", locale: "ru" },
+  });
+  const passengerModeLogin = await request("/auth/verify-otp", {
+    method: "POST",
+    body: { phone_number: "+7 777 100 00 02", code: passengerModeOtp.body.demo_code },
+  });
+  assert.equal(passengerModeLogin.response.status, 200);
+  assert.equal(passengerModeLogin.body.user.active_role, "passenger");
+  assert.equal(passengerModeLogin.body.user.driver_approval_status, "approved");
+  assert.equal((await request("/auth/me", { token: driverOneToken })).response.status, 401);
+
+  const driverModeOtp = await request("/auth/request-otp", {
+    method: "POST",
+    body: { phone_number: "+7 777 100 00 02", role: "driver", locale: "ru" },
+  });
+  const driverModeLogin = await request("/auth/verify-otp", {
+    method: "POST",
+    body: { phone_number: "+7 777 100 00 02", code: driverModeOtp.body.demo_code },
+  });
+  assert.equal(driverModeLogin.response.status, 200);
+  assert.equal(driverModeLogin.body.user.active_role, "driver");
+  assert.equal(driverModeLogin.body.user.driver_approval_status, "approved");
 });

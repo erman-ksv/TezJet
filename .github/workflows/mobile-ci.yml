@@ -40,3 +40,18 @@ jobs:
         env:
           EXPO_PUBLIC_API_URL: https://api.example.invalid
         run: pnpm exec expo export --platform android --platform ios
+      - name: Set up Java for Android
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Generate Android native project
+        run: pnpm exec expo prebuild --platform android --no-install --clean
+      - name: Assemble Android debug APK
+        run: cd android && ./gradlew assembleDebug
+      - name: Upload Android debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tezjet-android-debug-apk
+          path: mobile/tezjet-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

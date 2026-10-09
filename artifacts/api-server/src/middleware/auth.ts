@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { AuthContext } from "../types/express";
 import { store } from "../store/memoryStore";
+import { REQUIRE_DRIVER_APPROVAL } from "../utils/config";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { verifyAccessToken } from "../utils/token";
@@ -50,6 +51,27 @@ export function requireRole(
     }
     next();
   };
+}
+
+export function requireApprovedDriver(
+  request: Request,
+  _response: Response,
+  next: NextFunction,
+): void {
+  if (!request.auth || request.auth.role !== "driver") {
+    throw new AppError(403, "Driver access is required", "DRIVER_ONLY");
+  }
+  if (
+    REQUIRE_DRIVER_APPROVAL &&
+    request.auth.user.driverApprovalStatus !== "approved"
+  ) {
+    throw new AppError(
+      403,
+      "Driver approval is required before using driver features",
+      "DRIVER_NOT_APPROVED",
+    );
+  }
+  next();
 }
 
 export function readSocketToken(value: unknown): string | null {

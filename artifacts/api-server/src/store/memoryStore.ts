@@ -74,7 +74,7 @@ class MemoryStore {
     return userId ? this.users.get(userId) : undefined;
   }
 
-  updateUser(userId: string, patch: Partial<Pick<User, "locale" | "lastLocation">>): User {
+  updateUser(userId: string, patch: Partial<Pick<User, "locale" | "lastLocation" | "driverApprovalStatus">>): User {
     const user = this.users.get(userId);
     if (!user) {
       throw new Error(`User ${userId} not found`);
@@ -254,7 +254,7 @@ class MemoryStore {
     status: DriverApprovalStatus,
   ): User | undefined {
     const user = this.users.get(userId);
-    if (!user || user.role !== "driver") {
+    if (!user || user.role === "admin" || user.driverApprovalStatus === undefined) {
       return undefined;
     }
     user.driverApprovalStatus = status;

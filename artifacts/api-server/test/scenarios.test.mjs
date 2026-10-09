@@ -113,7 +113,7 @@ async function registerUser(phoneNumber, role, fullName) {
     },
   });
   assert.equal(verification.response.status, 200);
-  assert.equal(verification.body.user.role, role);
+  assert.equal(verification.body.user.active_role, role);
   return verification.body.access_token;
 }
 
@@ -190,6 +190,8 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   const adminToken = await registerUser("+7 777 100 00 99", "admin", "Test Admin");
   const driverOneToken = await registerUser("+7 777 100 00 02", "driver", "Driver One");
   const driverOneProfile = await request("/auth/me", { token: driverOneToken });
+  assert.equal(driverOneProfile.body.user.role, "passenger", "driver mode belongs to the same passenger account");
+  assert.equal(driverOneProfile.body.user.active_role, "driver");
   assert.equal(driverOneProfile.body.user.driver_approval_status, "pending");
 
   const pendingJoin = await request("/queue/join", {
@@ -227,6 +229,8 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   });
   assert.equal(approval.response.status, 200);
   assert.equal(approval.body.driver.driver_approval_status, "approved");
+  const listedDrivers = await request("/admin/drivers", { token: adminToken });
+  assert.ok(listedDrivers.body.drivers.some((driver) => driver.id === driverOneProfile.body.user.id));
 
   const driverTwoToken = await registerUser("+7 777 100 00 03", "driver", "Driver Two");
   const driverTwoProfile = await request("/auth/me", { token: driverTwoToken });
@@ -369,4 +373,29 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(pooling.response.status, 200);
   assert.equal(pooling.body.smart_pooling, true);
   assert.equal(pooling.body.order.offered_driver_id, firstJoin.body.entry.driverId);
+
+  const passengerModeOtp = await request("/auth/request-otp", {
+    method: "POST",
+    body: { phone_number: "+7 777 100 00 02", role: "passenger", locale: "ru" },
+  });
+  const passengerModeLogin = await request("/auth/verify-otp", {
+    method: "POST",
+    body: { phone_number: "+7 777 100 00 02", code: passengerModeOtp.body.demo_code },
+  });
+  assert.equal(passengerModeLogin.response.status, 200);
+  assert.equal(passengerModeLogin.body.user.active_role, "passenger");
+  assert.equal(passengerModeLogin.body.user.driver_approval_status, "approved");
+  assert.equal((await request("/auth/me", { token: driverOneToken })).response.status, 401);
+
+  const driverModeOtp = await request("/auth/request-otp", {
+    method: "POST",
+    body: { phone_number: "+7 777 100 00 02", role: "driver", locale: "ru" },
+  });
+  const driverModeLogin = await request("/auth/verify-otp", {
+    method: "POST",
+    body: { phone_number: "+7 777 100 00 02", code: driverModeOtp.body.demo_code },
+  });
+  assert.equal(driverModeLogin.response.status, 200);
+  assert.equal(driverModeLogin.body.user.active_role, "driver");
+  assert.equal(driverModeLogin.body.user.driver_approval_status, "approved");
 });

@@ -5,6 +5,7 @@ import { readSocketToken } from "./middleware/auth";
 import { verifyAccessToken } from "./utils/token";
 import { logger } from "./lib/logger";
 import { PYATAK_ZONE, REQUIRE_DRIVER_APPROVAL } from "./utils/config";
+import { canUseRole } from "./utils/roleAccess";
 
 export function createRealtimeServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
@@ -24,7 +25,7 @@ export function createRealtimeServer(httpServer: HttpServer): Server {
       !claims ||
       !user ||
       user.sessionVersion !== claims.sessionVersion ||
-      user.role !== claims.role ||
+      !canUseRole(user, claims.role) ||
       (REQUIRE_DRIVER_APPROVAL &&
         user.role === "driver" &&
         user.driverApprovalStatus !== "approved")
@@ -33,7 +34,7 @@ export function createRealtimeServer(httpServer: HttpServer): Server {
       return;
     }
     socket.data.userId = user.id;
-    socket.data.role = user.role;
+    socket.data.role = claims.role;
     next();
   });
 

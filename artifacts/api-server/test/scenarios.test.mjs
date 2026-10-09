@@ -159,6 +159,8 @@ before(async () => {
       NODE_ENV: "test",
       PORT: String(port),
       SESSION_SECRET: "tezjet-test-session-secret",
+      ADMIN_PHONE: "+7 777 100 00 99",
+      REQUIRE_DRIVER_APPROVAL: "true",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -185,8 +187,56 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(currentMe.response.status, 200);
   assert.equal(currentMe.body.user.phone_number, "+77771000001");
 
+  const adminToken = await registerUser("+7 777 100 00 99", "admin", "Test Admin");
   const driverOneToken = await registerUser("+7 777 100 00 02", "driver", "Driver One");
+  const driverOneProfile = await request("/auth/me", { token: driverOneToken });
+  assert.equal(driverOneProfile.body.user.driver_approval_status, "pending");
+
+  const pendingJoin = await request("/queue/join", {
+    method: "POST",
+    token: driverOneToken,
+    body: { location: queueLocation, available_seats: 3 },
+  });
+  assert.equal(pendingJoin.response.status, 403);
+  assert.equal(pendingJoin.body.error.code, "DRIVER_NOT_APPROVED");
+
+  const pendingAccept = await request("/orders/not-created/accept", {
+    method: "POST",
+    token: driverOneToken,
+  });
+  assert.equal(pendingAccept.response.status, 403);
+  assert.equal(pendingAccept.body.error.code, "DRIVER_NOT_APPROVED");
+
+  const pendingSocket = io(socketUrl, {
+    auth: { token: driverOneToken },
+    path: "/api/socket.io",
+    transports: ["websocket"],
+  });
+  sockets.push(pendingSocket);
+  const socketRejection = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Pending driver socket was not rejected")), 5_000);
+    pendingSocket.once("connect_error", (error) => { clearTimeout(timeout); resolve(error); });
+    pendingSocket.once("connect", () => { clearTimeout(timeout); reject(new Error("Pending driver socket connected")); });
+  });
+  assert.match(socketRejection.message, /Unauthorized/);
+
+  const approval = await request(`/admin/drivers/${driverOneProfile.body.user.id}/approval`, {
+    method: "PATCH",
+    token: adminToken,
+    body: { status: "approved" },
+  });
+  assert.equal(approval.response.status, 200);
+  assert.equal(approval.body.driver.driver_approval_status, "approved");
+
   const driverTwoToken = await registerUser("+7 777 100 00 03", "driver", "Driver Two");
+  const driverTwoProfile = await request("/auth/me", { token: driverTwoToken });
+  const driverTwoApproval = await request(`/admin/drivers/${driverTwoProfile.body.user.id}/approval`, {
+    method: "PATCH",
+    token: adminToken,
+    body: { status: "approved" },
+  });
+  assert.equal(driverTwoApproval.response.status, 200);
+
   const driverOneSocket = await connectSocket(driverOneToken);
 
   const driverOneJoinEvent = waitForSocketEvent(

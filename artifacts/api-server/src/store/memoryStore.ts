@@ -55,7 +55,7 @@ class MemoryStore {
       locale: input.locale,
       profileLocked: true,
       sessionVersion: 0,
-      driverApprovalStatus: input.role === "driver" ? "approved" : undefined,
+      driverApprovalStatus: input.role === "driver" ? "pending" : undefined,
       createdAt: new Date().toISOString(),
     };
     this.users.set(user.id, user);

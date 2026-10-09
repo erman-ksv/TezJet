@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { authenticate, requireRole } from "../middleware/auth";
+import { authenticate, requireApprovedDriver, requireRole } from "../middleware/auth";
 import { antiFakeGPS } from "../middleware/antiFakeGPS";
 import {
   acceptOrder,
@@ -26,12 +26,14 @@ router.post(
   "/orders/:orderId/accept",
   authenticate,
   requireRole("driver"),
+  requireApprovedDriver,
   acceptOrder,
 );
 router.patch(
   "/orders/:orderId/status",
   authenticate,
   requireRole("driver"),
+  requireApprovedDriver,
   antiFakeGPS,
   updateOrderStatus,
 );
@@ -40,6 +42,7 @@ router.post(
   "/orders/:orderId/offer-first-driver",
   authenticate,
   requireRole("driver"),
+  requireApprovedDriver,
   offerToFirstDriver,
 );
 

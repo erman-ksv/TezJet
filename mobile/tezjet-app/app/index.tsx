@@ -70,14 +70,13 @@ export default function Home() {
     if (!from || !to || a === b) return Alert.alert("Маршрут", "Выбери разные точки А и Б.");
     setBusy(true);
     try {
-      let coords: object | undefined;
-      try {
-        const p = await Location.requestForegroundPermissionsAsync();
-        if (p.granted) {
-          const l = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          coords = { lat: l.coords.latitude, lng: l.coords.longitude, timestamp: l.timestamp, isMocked: false };
-        }
-      } catch { /* coordinates are optional */ }
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Нужна геолокация", "Для оформления заказа сервер требует координаты точки подачи. Разреши доступ и попробуй снова.");
+        return;
+      }
+      const l = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords = { lat: l.coords.latitude, lng: l.coords.longitude, timestamp: l.timestamp, isMocked: false };
       const r = await request<{order: {id: string}; offer?: unknown}>("/api/orders", token, { method: "POST", body: JSON.stringify({
         route_id: "pyatak", pickup_point: from.code, pickup_stop: from.code, destination_stop: to.code,
         pickup_location: coords, pickup_address: address.trim() || from.name, destination: to.name, seats: 1

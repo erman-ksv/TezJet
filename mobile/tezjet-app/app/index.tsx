@@ -127,8 +127,12 @@ export default function Home() {
     socket.on("connect_error", () => setSocketConnected(false));
     socket.on("incoming_order", (payload: { order?: RideOrder }) => { if (payload.order) setIncomingOrder(payload.order); });
     socket.on("order:status", (payload: { order?: RideOrder }) => {
-      if (!payload.order) return;
-      setActiveOrder(current => current?.id === payload.order?.id && !["completed", "cancelled"].includes(payload.order.status) ? payload.order : current?.id === payload.order?.id ? null : current);
+      const updatedOrder = payload.order;
+      if (!updatedOrder) return;
+      setActiveOrder(current => {
+        if (current?.id !== updatedOrder.id) return current;
+        return ["completed", "cancelled"].includes(updatedOrder.status) ? null : updatedOrder;
+      });
     });
     socket.on("queue:position", (payload: { position?: number | null }) => {
       setQueuePosition(payload.position ?? null);

@@ -96,6 +96,10 @@ const defaultRoute: RouteDefinition = {
 export class PostgresStore implements Store {
   private modulePromise?: Promise<DbModule>;
 
+  async initialize(): Promise<void> {
+    await this.database();
+  }
+
   private async database(): Promise<DbModule> {
     if (!process.env.DATABASE_URL) {
       throw new Error("DATABASE_URL is required to use PostgresStore");

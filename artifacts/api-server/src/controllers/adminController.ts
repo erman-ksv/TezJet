@@ -85,10 +85,10 @@ export async function createRoute(request: Request, response: Response): Promise
     route = await store.createRoute({
       id: routeId(request.body?.route_id),
       name: requiredString(request.body?.name, "name", 120),
-      pricePerStopKzt: boundedInteger(
-        request.body?.price_per_stop ?? 500,
+      pricePerStop: boundedInteger(
+        request.body?.price_per_stop,
         "price_per_stop",
-        0,
+        1,
         1_000_000_000,
       ),
       active: optionalBoolean(request.body?.active, "active", true),
@@ -106,17 +106,17 @@ export async function updateRoute(request: Request, response: Response): Promise
   const routeIdParam = requiredString(request.params["routeId"], "route_id", 80);
   const patch: {
     name?: string;
-    pricePerStopKzt?: number;
+    pricePerStop?: number;
     active?: boolean;
   } = {};
   if (request.body?.name !== undefined) {
     patch.name = requiredString(request.body.name, "name", 120);
   }
   if (request.body?.price_per_stop !== undefined) {
-    patch.pricePerStopKzt = boundedInteger(
+    patch.pricePerStop = boundedInteger(
       request.body.price_per_stop,
       "price_per_stop",
-      0,
+      1,
       1_000_000_000,
     );
   }

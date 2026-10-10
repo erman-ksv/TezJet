@@ -12,7 +12,13 @@ export interface FareRequest {
 async function getRoute(routeId: unknown): Promise<RouteDefinition> {
   const id = typeof routeId === "string" && routeId.trim() ? routeId.trim() : "pyatak";
   const route = await store.getRoute(id);
-  if (!route || !route.active) {
+  if (!route) {
+    throw new AppError(404, `Route not found: ${id}`, "ROUTE_NOT_FOUND");
+  }
+  if (route.pricePerStop <= 0) {
+    throw new AppError(409, "Fare is not configured for this market", "MARKET_FARE_NOT_CONFIGURED");
+  }
+  if (!route.active) {
     throw new AppError(404, `Route not found: ${id}`, "ROUTE_NOT_FOUND");
   }
   if (route.stops.length === 0) {
@@ -109,12 +115,12 @@ export async function calculateRouteFare(input: FareRequest = {}): Promise<FareQ
     pickupPosition,
     destinationPosition,
     distanceStops,
-    pricePerStopKzt: route.pricePerStopKzt,
+    pricePerStop: route.pricePerStop,
     minimumFareApplied: rawDistance < 1,
     stops: pickupStop.id === destinationStop.id
       ? [pickupStop]
       : [pickupStop, destinationStop],
-    totalKzt: distanceStops * route.pricePerStopKzt,
+    totalFare: distanceStops * route.pricePerStop,
     calculatedAt: new Date().toISOString(),
   };
 }

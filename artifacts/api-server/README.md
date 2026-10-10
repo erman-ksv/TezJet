@@ -29,11 +29,20 @@ returned in responses or written to source files.
 pnpm --filter @workspace/api-server run dev
 ```
 
-The managed workflow supplies `PORT`. Set `SESSION_SECRET` for production. Storage selection is explicit:
+The managed workflow supplies `PORT`. Set `SESSION_SECRET` for production. For another market, set the ISO country and ISO 4217 currency explicitly. Production must use an approved `MARKET_PRICE_PER_STOP`; never reuse a tariff from another currency without a business-approved price. Storage selection is explicit:
 
 - Tests use the in-memory adapter.
 - Development uses in-memory storage by default. To test PostgreSQL, set `TEZJET_STORAGE_ADAPTER=postgres` and `DATABASE_URL`.
 - Production refuses to start unless `TEZJET_STORAGE_ADAPTER=postgres` and `DATABASE_URL` are configured; it will not silently run with volatile in-memory data.
+
+For an existing database that still has the legacy `price_per_stop_kzt` column, perform an explicit migration before deploying this version. This preserves existing amounts as KZT and intentionally does not convert them to UZS:
+
+```sql
+ALTER TABLE "tezjet_routes" RENAME COLUMN "price_per_stop_kzt" TO "price_per_stop";
+ALTER TABLE "tezjet_routes" ADD COLUMN "currency" text NOT NULL DEFAULT 'KZT';
+```
+
+After the migration, review each route's currency and set a business-approved tariff for the target market. Existing KZT rows are not automatically re-labelled as UZS. A PostgreSQL database whose stored route currency differs from `MARKET_CURRENCY` will refuse startup until the route is explicitly reconciled.
 
 Provision the PostgreSQL database and apply the current Drizzle schema before enabling the PostgreSQL adapter:
 
@@ -91,8 +100,7 @@ services.
 Point D orders are offered to the first in-transit driver with enough seats.
 Driver-facing order responses mask passenger phone numbers.
 
-The default route has two stops, Point C and Point D, and a price of 500 KZT
-per stop. Admins can change the price and stops at runtime through `/api/admin`.
+The default route has two stops, Point C and Point D. Market selection uses `MARKET_COUNTRY` and `MARKET_CURRENCY` (defaults: `UZ` and `UZS`). Set `MARKET_PRICE_PER_STOP` to an approved positive integer before enabling a fare. The default UZS route remains inactive when no price is configured; the service never converts or guesses a UZS tariff from the former 500 KZT demo price. Admins can change route prices and stops at runtime through `/api/admin`.
 Set `REQUIRE_DRIVER_APPROVAL=true` to block unapproved drivers from joining
 the queue. Admin OTP registration is enabled only when `ADMIN_PHONE` is set.
 

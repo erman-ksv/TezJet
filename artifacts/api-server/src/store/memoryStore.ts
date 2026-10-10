@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { REQUIRE_DRIVER_APPROVAL } from "../utils/config";
+import { MARKET_CURRENCY, MARKET_PRICE_PER_STOP, REQUIRE_DRIVER_APPROVAL } from "../utils/config";
 import type { Store } from "./storeContract";
 import type {
   Coordinates,
@@ -33,9 +33,9 @@ class MemoryStore implements Store {
     this.routes.set("pyatak", {
       id: "pyatak",
       name: "Pyatak",
-      currency: "KZT",
-      pricePerStopKzt: 500,
-      active: true,
+      currency: MARKET_CURRENCY,
+      pricePerStop: MARKET_PRICE_PER_STOP ?? 0,
+      active: MARKET_PRICE_PER_STOP !== undefined,
       stops: [
         { id: "pyatak-stop-c", code: "C", name: "Point C", sequence: 1, position: 1 },
         { id: "pyatak-stop-d", code: "D", name: "Point D", sequence: 2, position: 2 },
@@ -294,7 +294,7 @@ class MemoryStore implements Store {
   createRoute(input: {
     id: string;
     name: string;
-    pricePerStopKzt: number;
+    pricePerStop: number;
     active: boolean;
   }): RouteDefinition {
     if (this.routes.has(input.id)) {
@@ -304,8 +304,8 @@ class MemoryStore implements Store {
     const route: RouteDefinition = {
       id: input.id,
       name: input.name,
-      currency: "KZT",
-      pricePerStopKzt: input.pricePerStopKzt,
+      currency: MARKET_CURRENCY,
+      pricePerStop: input.pricePerStop,
       active: input.active,
       stops: [],
       createdAt: now,
@@ -317,7 +317,7 @@ class MemoryStore implements Store {
 
   updateRoute(
     routeId: string,
-    patch: Partial<Pick<RouteDefinition, "name" | "pricePerStopKzt" | "active">>,
+    patch: Partial<Pick<RouteDefinition, "name" | "pricePerStop" | "active">>,
   ): RouteDefinition | undefined {
     const route = this.routes.get(routeId);
     if (!route) {

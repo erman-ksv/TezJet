@@ -159,6 +159,7 @@ before(async () => {
       NODE_ENV: "test",
       PORT: String(port),
       SESSION_SECRET: "tezjet-test-session-secret",
+      ADMIN_PHONE: "+77771000099",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -185,8 +186,31 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(currentMe.response.status, 200);
   assert.equal(currentMe.body.user.phone_number, "+77771000001");
 
+  const adminToken = await registerUser("+7 777 100 00 99", "admin", "Test Admin");
   const driverOneToken = await registerUser("+7 777 100 00 02", "driver", "Driver One");
   const driverTwoToken = await registerUser("+7 777 100 00 03", "driver", "Driver Two");
+
+  const driverOneMe = await request("/auth/me", { token: driverOneToken });
+  assert.equal(driverOneMe.body.user.driver_approval_status, "pending");
+  const blockedBeforeApproval = await request("/queue/join", {
+    method: "POST",
+    token: driverOneToken,
+    body: { location: queueLocation, available_seats: 3 },
+  });
+  assert.equal(blockedBeforeApproval.response.status, 403);
+  assert.equal(blockedBeforeApproval.body.error.code, "DRIVER_APPROVAL_REQUIRED");
+
+  for (const driverToken of [driverOneToken, driverTwoToken]) {
+    const me = await request("/auth/me", { token: driverToken });
+    const approval = await request(`/admin/drivers/${me.body.user.id}/approval`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "approved" },
+    });
+    assert.equal(approval.response.status, 200);
+    assert.equal(approval.body.driver.driver_approval_status, "approved");
+  }
+
   const driverOneSocket = await connectSocket(driverOneToken);
 
   const driverOneJoinEvent = waitForSocketEvent(

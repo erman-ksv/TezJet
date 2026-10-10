@@ -35,6 +35,15 @@ The managed workflow supplies `PORT`. Set `SESSION_SECRET` for production. For a
 - Development uses in-memory storage by default. To test PostgreSQL, set `TEZJET_STORAGE_ADAPTER=postgres` and `DATABASE_URL`.
 - Production refuses to start unless `TEZJET_STORAGE_ADAPTER=postgres` and `DATABASE_URL` are configured; it will not silently run with volatile in-memory data.
 
+For an existing database that still has the legacy `price_per_stop_kzt` column, perform an explicit migration before deploying this version. This preserves existing amounts as KZT and intentionally does not convert them to UZS:
+
+```sql
+ALTER TABLE "tezjet_routes" RENAME COLUMN "price_per_stop_kzt" TO "price_per_stop";
+ALTER TABLE "tezjet_routes" ADD COLUMN "currency" text NOT NULL DEFAULT 'KZT';
+```
+
+After the migration, review each route's currency and set a business-approved tariff for the target market. Existing KZT rows are not automatically re-labelled as UZS. A PostgreSQL database whose stored route currency differs from `MARKET_CURRENCY` will refuse startup until the route is explicitly reconciled.
+
 Provision the PostgreSQL database and apply the current Drizzle schema before enabling the PostgreSQL adapter:
 
 ```bash

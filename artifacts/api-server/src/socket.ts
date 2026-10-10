@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
-import { store } from "./store/memoryStore";
+import { store } from "./store";
 import { readSocketToken } from "./middleware/auth";
 import { verifyAccessToken } from "./utils/token";
 import { logger } from "./lib/logger";

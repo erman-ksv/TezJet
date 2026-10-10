@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { calculateRouteFare, getRouteStops, parseRouteStopCodes } from "../utils/fare";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 
 export async function listFareStops(_request: Request, response: Response): Promise<void> {
   const routeId = typeof _request.query.route_id === "string"

@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import type { Server } from "socket.io";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 import type { Coordinates, Order, OrderStatus, PickupPoint } from "../types/domain";
 import { SEAT_LOCK_TTL_MS } from "../utils/config";
 import { AppError } from "../utils/errors";

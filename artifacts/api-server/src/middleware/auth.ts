@@ -13,14 +13,14 @@ function readBearerToken(request: Request): string | null {
   return header.slice("Bearer ".length).trim() || null;
 }
 
-export function authenticate(
+export async function authenticate(
   request: Request,
   _response: Response,
   next: NextFunction,
-): void {
+): Promise<void> {
   const token = readBearerToken(request);
   const claims = token ? verifyAccessToken(token) : null;
-  const user = claims?.sub ? store.getUser(claims.sub) : undefined;
+  const user = claims?.sub ? await store.getUser(claims.sub) : undefined;
 
   if (
     !claims ||

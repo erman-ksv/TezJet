@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { REQUIRE_DRIVER_APPROVAL } from "../utils/config";
+import type { Store } from "./storeContract";
 import type {
   Coordinates,
   DeviceRegistration,
@@ -16,7 +17,7 @@ import type {
   UserRole,
 } from "../types/domain";
 
-class MemoryStore {
+class MemoryStore implements Store {
   private readonly users = new Map<string, User>();
   private readonly usersByPhone = new Map<string, string>();
   private readonly otpChallenges = new Map<string, OtpChallenge>();
@@ -24,6 +25,8 @@ class MemoryStore {
   private readonly orders = new Map<string, Order>();
   private readonly deviceRegistrations = new Map<string, DeviceRegistration>();
   private readonly routes = new Map<string, RouteDefinition>();
+
+  initialize(): void {}
 
   constructor() {
     const now = new Date().toISOString();
@@ -208,6 +211,42 @@ class MemoryStore {
     }
     Object.assign(order, patch, { updatedAt: new Date().toISOString() });
     return order;
+  }
+
+  claimOrderForDriver(
+    orderId: string,
+    driverId: string,
+    orderPatch: Partial<Order>,
+    queuePatch: Partial<QueueEntry>,
+  ): Order | undefined {
+    const order = this.orders.get(orderId);
+    const entry = this.queueEntries.get(driverId);
+    if (
+      !order ||
+      order.status !== "searching" ||
+      (order.driverId && order.driverId !== driverId) ||
+      (order.offeredDriverId && order.offeredDriverId !== driverId) ||
+      !entry ||
+      entry.availableSeats < order.seats
+    ) {
+      return undefined;
+    }
+    const activePoolOffer =
+      order.pickupPoint === "D" &&
+      order.offeredDriverId === driverId &&
+      entry.inFifo === false &&
+      entry.status === "in_transit";
+    if (!activePoolOffer && this.getQueuePosition(driverId) !== 1) {
+      return undefined;
+    }
+    const updated = this.updateOrder(orderId, {
+      ...orderPatch,
+      driverId,
+      offeredDriverId: driverId,
+    });
+    if (!updated) return undefined;
+    this.updateQueueEntry(driverId, queuePatch);
+    return updated;
   }
 
   listOrdersForUser(userId: string): Order[] {

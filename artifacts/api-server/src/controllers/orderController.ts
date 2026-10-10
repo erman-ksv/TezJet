@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { Server } from "socket.io";
-import { store } from "../store/memoryStore";
+import { logger } from "../lib/logger";
+import { store } from "../store";
 import type { Coordinates, Order, OrderStatus, PickupPoint } from "../types/domain";
 import { SEAT_LOCK_TTL_MS } from "../utils/config";
 import { AppError } from "../utils/errors";
@@ -60,8 +61,8 @@ function assertDriver(request: Request): string {
   return request.auth.userId;
 }
 
-function getOrderForActor(request: Request, orderId: string): Order {
-  const order = store.getOrder(orderId);
+async function getOrderForActor(request: Request, orderId: string): Promise<Order> {
+  const order = await store.getOrder(orderId);
   if (!order) {
     throw new AppError(
       404,
@@ -94,7 +95,7 @@ export async function createOrder(
     "D",
   ] as const) as PickupPoint;
   const requestedStops = parseRouteStopCodes(request.body?.route_stops);
-  const fare = calculateRouteFare({
+  const fare = await calculateRouteFare({
     routeId: request.body?.route_id,
     pickupStop: request.body?.pickup_stop ?? pickupPoint,
     destinationStop: request.body?.destination_stop,
@@ -111,7 +112,7 @@ export async function createOrder(
         request.auth?.locale ?? "ru",
       )
     : undefined;
-  const order = store.createOrder({
+  const order = await store.createOrder({
     passengerId,
     passengerPhone: request.auth?.user.phoneNumber ?? "",
     pickupPoint,
@@ -126,10 +127,10 @@ export async function createOrder(
 
   const firstDriver =
     pickupPoint === "D"
-      ? store.getFirstEligibleDriver(order.seats)
-      : store.getQueue()[0];
+      ? await store.getFirstEligibleDriver(order.seats)
+      : (await store.getQueue())[0];
   if (firstDriver) {
-    store.updateOrder(order.id, { offeredDriverId: firstDriver.driverId });
+    await store.updateOrder(order.id, { offeredDriverId: firstDriver.driverId });
     order.offeredDriverId = firstDriver.driverId;
     sendOrderToDriver(getSocket(request), order, firstDriver.driverId);
   }
@@ -139,30 +140,30 @@ export async function createOrder(
     offer: firstDriver
       ? {
           driver_id: firstDriver.driverId,
-          queue_position: store.getQueuePosition(firstDriver.driverId),
+          queue_position: await store.getQueuePosition(firstDriver.driverId),
           smart_pooling: pickupPoint === "D",
         }
       : null,
   });
 }
 
-export function listOrders(request: Request, response: Response): void {
-  const orders = store.listOrdersForUser(request.auth?.userId ?? "").map((order) =>
+export async function listOrders(request: Request, response: Response): Promise<void> {
+  const orders = (await store.listOrdersForUser(request.auth?.userId ?? "")).map((order) =>
     serializeOrder(order, request.auth?.role === "driver"),
   );
   response.json({ orders });
 }
 
-export function getOrder(request: Request, response: Response): void {
-  const order = getOrderForActor(request, String(request.params["orderId"]));
+export async function getOrder(request: Request, response: Response): Promise<void> {
+  const order = await getOrderForActor(request, String(request.params["orderId"]));
   response.json({
     order: serializeOrder(order, request.auth?.role === "driver"),
   });
 }
 
-export function acceptOrder(request: Request, response: Response): void {
+export async function acceptOrder(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
-  const order = store.getOrder(String(request.params["orderId"]));
+  const order = await store.getOrder(String(request.params["orderId"]));
   if (!order) {
     throw new AppError(
       404,
@@ -177,8 +178,8 @@ export function acceptOrder(request: Request, response: Response): void {
     throw new AppError(409, "Order is reserved for another driver", "ORDER_RESERVED");
   }
 
-  const queueEntry = store.getQueueEntry(driverId);
-  const position = store.getQueuePosition(driverId);
+  const queueEntry = await store.getQueueEntry(driverId);
+  const position = await store.getQueuePosition(driverId);
   const isActivePoolOffer =
     order.pickupPoint === "D" &&
     order.offeredDriverId === driverId &&
@@ -194,13 +195,6 @@ export function acceptOrder(request: Request, response: Response): void {
   const seatLockExpiresAt =
     order.pickupPoint === "C" ? Date.now() + SEAT_LOCK_TTL_MS : undefined;
   const status: OrderStatus = order.pickupPoint === "C" ? "en_route_to_c" : "in_transit";
-  const updated = store.updateOrder(order.id, {
-    driverId,
-    offeredDriverId: driverId,
-    status,
-    seatLockExpiresAt,
-  }) as Order;
-
   const activeOrderIds = [
     ...(queueEntry.activeOrderIds ??
       (queueEntry.currentOrderId ? [queueEntry.currentOrderId] : [])),
@@ -211,27 +205,37 @@ export function acceptOrder(request: Request, response: Response): void {
     queueEntry.inFifo !== false &&
     status !== "in_transit" &&
     remainingSeats > 0;
-  store.updateQueueEntry(driverId, {
-    status: order.pickupPoint === "C" ? "en_route_to_c" : "in_transit",
-    priorityLock: true,
-    currentOrderId: order.id,
-    activeOrderIds: [...new Set(activeOrderIds)],
-    inFifo: staysInFifo,
-    availableSeats: remainingSeats,
-    seatLockExpiresAt,
-  });
+  const updated = await store.claimOrderForDriver(
+    order.id,
+    driverId,
+    { status, seatLockExpiresAt },
+    {
+      status: order.pickupPoint === "C" ? "en_route_to_c" : "in_transit",
+      priorityLock: true,
+      currentOrderId: order.id,
+      activeOrderIds: [...new Set(activeOrderIds)],
+      inFifo: staysInFifo,
+      availableSeats: remainingSeats,
+      seatLockExpiresAt,
+    },
+  );
+  if (!updated) {
+    throw new AppError(409, "Order is no longer available", "ORDER_UNAVAILABLE");
+  }
   if (seatLockExpiresAt) {
     setTimeout(() => {
-      store.clearExpiredSeatLocks();
-      emitQueueUpdate(getSocket(request), {
-        type: "seat_lock_expired",
-        driverId,
-      });
+      void (async () => {
+        await store.clearExpiredSeatLocks();
+        await emitQueueUpdate(getSocket(request), {
+          type: "seat_lock_expired",
+          driverId,
+        });
+      })().catch((err) => logger.error({ err, driverId }, "Seat-lock expiration failed"));
     }, SEAT_LOCK_TTL_MS + 100);
   }
 
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request), {
+  await emitQueueUpdate(getSocket(request), {
     type: "order_assigned",
     driverId,
   });
@@ -242,9 +246,9 @@ export function acceptOrder(request: Request, response: Response): void {
   });
 }
 
-export function updateOrderStatus(request: Request, response: Response): void {
+export async function updateOrderStatus(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
-  const order = getOrderForActor(request, String(request.params["orderId"]));
+  const order = await getOrderForActor(request, String(request.params["orderId"]));
   if (order.driverId !== driverId) {
     throw new AppError(403, "Only the assigned driver can update this order", "NOT_ASSIGNED");
   }
@@ -261,31 +265,31 @@ export function updateOrderStatus(request: Request, response: Response): void {
     );
   }
 
-  const updated = store.updateOrder(order.id, {
+  const updated = await store.updateOrder(order.id, {
     status: nextStatus,
     seatLockExpiresAt: nextStatus === "in_transit" ? undefined : order.seatLockExpiresAt,
   }) as Order;
   if (nextStatus === "arrived_at_c" || nextStatus === "en_route_to_c") {
-    store.updateQueueEntry(driverId, {
+    await store.updateQueueEntry(driverId, {
       status: nextStatus,
       priorityLock: true,
     });
   } else if (nextStatus === "in_transit") {
-    store.updateQueueEntry(driverId, {
+    await store.updateQueueEntry(driverId, {
       status: "in_transit",
       priorityLock: true,
       inFifo: false,
       seatLockExpiresAt: undefined,
     });
   } else if (nextStatus === "completed" || nextStatus === "cancelled") {
-    const entry = store.getQueueEntry(driverId);
+    const entry = await store.getQueueEntry(driverId);
     if (entry) {
       const activeOrderIds = (
         entry.activeOrderIds ??
         (entry.currentOrderId ? [entry.currentOrderId] : [])
       ).filter((orderId) => orderId !== order.id);
       const availableSeats = entry.availableSeats + order.seats;
-      store.updateQueueEntry(
+      await store.updateQueueEntry(
         driverId,
         activeOrderIds.length > 0
           ? {
@@ -311,33 +315,33 @@ export function updateOrderStatus(request: Request, response: Response): void {
   }
 
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request), {
+  await emitQueueUpdate(getSocket(request), {
     type: "order_released",
     driverId,
   });
   response.json({ order: serializeOrder(updated, true) });
 }
 
-export function cancelOrder(request: Request, response: Response): void {
-  const order = getOrderForActor(request, String(request.params["orderId"]));
+export async function cancelOrder(request: Request, response: Response): Promise<void> {
+  const order = await getOrderForActor(request, String(request.params["orderId"]));
   if (order.status === "completed" || order.status === "cancelled") {
     throw new AppError(409, "Order is already closed", "ORDER_CLOSED");
   }
-  const updated = store.updateOrder(order.id, {
+  const updated = await store.updateOrder(order.id, {
     status: "cancelled",
     cancelledBy: request.auth?.userId,
     driverId: order.driverId,
     seatLockExpiresAt: undefined,
   }) as Order;
   if (order.driverId) {
-    const entry = store.getQueueEntry(order.driverId);
+    const entry = await store.getQueueEntry(order.driverId);
     if (entry) {
       const activeOrderIds = (
         entry.activeOrderIds ??
         (entry.currentOrderId ? [entry.currentOrderId] : [])
       ).filter((orderId) => orderId !== order.id);
       const availableSeats = entry.availableSeats + order.seats;
-      store.updateQueueEntry(
+      await store.updateQueueEntry(
         order.driverId,
         activeOrderIds.length > 0
           ? {
@@ -362,24 +366,24 @@ export function cancelOrder(request: Request, response: Response): void {
     }
   }
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request), {
+  await emitQueueUpdate(getSocket(request), {
     type: "order_released",
     driverId: order.driverId,
   });
   response.json({ order: serializeOrder(updated, request.auth?.role === "driver") });
 }
 
-export function offerToFirstDriver(request: Request, response: Response): void {
+export async function offerToFirstDriver(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
-  const order = getOrderForActor(request, String(request.params["orderId"]));
+  const order = await getOrderForActor(request, String(request.params["orderId"]));
   if (order.pickupPoint !== "D" || order.status !== "searching") {
     throw new AppError(409, "Only searching Point D orders can be pooled", "NOT_POOLING_ORDER");
   }
-  const firstDriver = store.getFirstEligibleDriver(order.seats);
+  const firstDriver = await store.getFirstEligibleDriver(order.seats);
   if (!firstDriver || firstDriver.driverId !== driverId) {
     throw new AppError(409, "You are not the eligible first driver", "FIFO_REQUIRED");
   }
-  store.updateOrder(order.id, { offeredDriverId: driverId });
+  await store.updateOrder(order.id, { offeredDriverId: driverId });
   order.offeredDriverId = driverId;
   sendOrderToDriver(getSocket(request), order, driverId);
   response.json({ order: serializeOrder(order, true), smart_pooling: true });

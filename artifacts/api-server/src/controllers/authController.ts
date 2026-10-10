@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { randomInt, randomUUID } from "node:crypto";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 import type { Locale, UserRole } from "../types/domain";
 import { createAccessToken } from "../utils/token";
 import { normalizePhone } from "../utils/phone";

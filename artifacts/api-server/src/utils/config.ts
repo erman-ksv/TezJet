@@ -9,6 +9,15 @@ export const QUEUE_GEOFENCE_METERS = Number(
 );
 export const MAX_SPEED_KMH = 180;
 export const SEAT_LOCK_TTL_MS = 7 * 60 * 1000;
+export const ORDER_OFFER_TIMEOUT_MS = Number(
+  process.env.ORDER_OFFER_TIMEOUT_MS ?? 15_000,
+);
+export const SMART_POOLING_MAX_PICKUP_DISTANCE_METERS = Number(
+  process.env.SMART_POOLING_MAX_PICKUP_DISTANCE_METERS ?? 1_500,
+);
+export const SMART_POOLING_MAX_LOCATION_AGE_MS = Number(
+  process.env.SMART_POOLING_MAX_LOCATION_AGE_MS ?? 2 * 60 * 1000,
+);
 export const ADMIN_PHONE = process.env.ADMIN_PHONE
   ? process.env.ADMIN_PHONE.replace(/[^\d+]/g, "")
   : undefined;

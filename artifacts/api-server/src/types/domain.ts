@@ -126,6 +126,10 @@ export interface Order {
   status: OrderStatus;
   createdAt: string;
   updatedAt: string;
+  /** Internal offer state; omitted from the public order representation. */
+  offerExpiresAt?: number;
+  /** Drivers already offered this order, in dispatch order. */
+  offeredDriverIds?: string[];
   seatLockExpiresAt?: number;
   cancelledBy?: string;
 }

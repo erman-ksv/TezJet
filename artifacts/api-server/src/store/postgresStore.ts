@@ -373,6 +373,77 @@ export class PostgresStore implements Store {
     return row ? asOrder(row as unknown as Record<string, unknown>) : undefined;
   }
 
+  async claimOrderForDriver(
+    orderId: string,
+    driverId: string,
+    orderPatch: Partial<Order>,
+    queuePatch: Partial<QueueEntry>,
+  ): Promise<Order | undefined> {
+    const { db, ordersTable, driverQueueTable } = await this.database();
+    return db.transaction(async (tx) => {
+      const [orderRow] = await tx.select().from(ordersTable)
+        .where(eq(ordersTable.id, orderId))
+        .for("update")
+        .limit(1);
+      if (!orderRow) return undefined;
+      const order = asOrder(orderRow as unknown as Record<string, unknown>);
+      if (
+        order.status !== "searching" ||
+        (order.driverId && order.driverId !== driverId) ||
+        (order.offeredDriverId && order.offeredDriverId !== driverId)
+      ) return undefined;
+
+      const [queueRow] = await tx.select().from(driverQueueTable)
+        .where(eq(driverQueueTable.driverId, driverId))
+        .for("update")
+        .limit(1);
+      if (!queueRow) return undefined;
+      const entry = asQueueEntry(queueRow as unknown as Record<string, unknown>);
+      if (entry.availableSeats < order.seats) return undefined;
+
+      const fifoRows = await tx.select().from(driverQueueTable).where(and(
+        eq(driverQueueTable.inFifo, true),
+        or(isNull(driverQueueTable.seatLockExpiresAt), gt(driverQueueTable.seatLockExpiresAt, Date.now())),
+      )).orderBy(desc(driverQueueTable.priorityLock), asc(driverQueueTable.joinedAt)).for("update");
+      const firstFifoDriverId = fifoRows[0]?.driverId;
+      const activePoolOffer =
+        order.pickupPoint === "D" &&
+        order.offeredDriverId === driverId &&
+        entry.inFifo === false &&
+        entry.status === "in_transit";
+      if (!activePoolOffer && firstFifoDriverId !== driverId) return undefined;
+
+      const updatedOrder: Order = {
+        ...order,
+        ...orderPatch,
+        id: order.id,
+        driverId,
+        offeredDriverId: driverId,
+        updatedAt: new Date().toISOString(),
+      };
+      const updatedEntry: QueueEntry = { ...entry, ...queuePatch, driverId };
+      await tx.update(ordersTable).set({
+        driverId,
+        offeredDriverId: driverId,
+        status: updatedOrder.status,
+        updatedAt: updatedOrder.updatedAt,
+        payload: updatedOrder as unknown as Record<string, unknown>,
+      }).where(eq(ordersTable.id, orderId));
+      await tx.update(driverQueueTable).set({
+        joinedAt: updatedEntry.joinedAt,
+        status: updatedEntry.status,
+        availableSeats: updatedEntry.availableSeats,
+        lastLocation: updatedEntry.lastLocation as unknown as Record<string, unknown>,
+        priorityLock: updatedEntry.priorityLock,
+        inFifo: updatedEntry.inFifo !== false,
+        activeOrderIds: updatedEntry.activeOrderIds ?? [],
+        currentOrderId: updatedEntry.currentOrderId ?? null,
+        seatLockExpiresAt: updatedEntry.seatLockExpiresAt ?? null,
+      }).where(eq(driverQueueTable.driverId, driverId));
+      return updatedOrder;
+    });
+  }
+
   async listOrdersForUser(userId: string): Promise<Order[]> {
     const { db, ordersTable } = await this.database();
     const rows = await db.select().from(ordersTable).where(or(

@@ -97,7 +97,7 @@ export async function joinQueue(request: Request, response: Response): Promise<v
     currentOrderId: existing?.currentOrderId,
     seatLockExpiresAt: existing?.seatLockExpiresAt,
   });
-  emitQueueUpdate(request.app.locals.io, {
+  await emitQueueUpdate(request.app.locals.io, {
     type: existing ? "reordered" : "joined",
     driverId,
   });

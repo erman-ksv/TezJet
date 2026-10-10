@@ -20,6 +20,7 @@ import type {
 export type MaybePromise<T> = T | Promise<T>;
 
 export interface Store {
+  initialize(): MaybePromise<void>;
   createUser(input: {
     role: UserRole;
     fullName: string;

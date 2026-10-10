@@ -195,13 +195,6 @@ export async function acceptOrder(request: Request, response: Response): Promise
   const seatLockExpiresAt =
     order.pickupPoint === "C" ? Date.now() + SEAT_LOCK_TTL_MS : undefined;
   const status: OrderStatus = order.pickupPoint === "C" ? "en_route_to_c" : "in_transit";
-  const updated = await store.updateOrder(order.id, {
-    driverId,
-    offeredDriverId: driverId,
-    status,
-    seatLockExpiresAt,
-  }) as Order;
-
   const activeOrderIds = [
     ...(queueEntry.activeOrderIds ??
       (queueEntry.currentOrderId ? [queueEntry.currentOrderId] : [])),
@@ -212,15 +205,23 @@ export async function acceptOrder(request: Request, response: Response): Promise
     queueEntry.inFifo !== false &&
     status !== "in_transit" &&
     remainingSeats > 0;
-  await store.updateQueueEntry(driverId, {
-    status: order.pickupPoint === "C" ? "en_route_to_c" : "in_transit",
-    priorityLock: true,
-    currentOrderId: order.id,
-    activeOrderIds: [...new Set(activeOrderIds)],
-    inFifo: staysInFifo,
-    availableSeats: remainingSeats,
-    seatLockExpiresAt,
-  });
+  const updated = await store.claimOrderForDriver(
+    order.id,
+    driverId,
+    { status, seatLockExpiresAt },
+    {
+      status: order.pickupPoint === "C" ? "en_route_to_c" : "in_transit",
+      priorityLock: true,
+      currentOrderId: order.id,
+      activeOrderIds: [...new Set(activeOrderIds)],
+      inFifo: staysInFifo,
+      availableSeats: remainingSeats,
+      seatLockExpiresAt,
+    },
+  );
+  if (!updated) {
+    throw new AppError(409, "Order is no longer available", "ORDER_UNAVAILABLE");
+  }
   if (seatLockExpiresAt) {
     setTimeout(() => {
       void (async () => {

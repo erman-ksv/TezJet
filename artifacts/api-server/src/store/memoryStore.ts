@@ -26,6 +26,8 @@ class MemoryStore implements Store {
   private readonly deviceRegistrations = new Map<string, DeviceRegistration>();
   private readonly routes = new Map<string, RouteDefinition>();
 
+  initialize(): void {}
+
   constructor() {
     const now = new Date().toISOString();
     this.routes.set("pyatak", {

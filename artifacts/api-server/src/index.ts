@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { createServer } from "node:http";
 import { createRealtimeServer } from "./socket";
-import { store } from "./store/memoryStore";
+import { store } from "./store";
 
 const httpServer = createServer(app);
 const io = createRealtimeServer(httpServer);

@@ -10,7 +10,7 @@ app.locals.io = io;
 const cleanupTimer = setInterval(() => {
   // Seat locks are kept in memory for this runnable API adapter and expire automatically.
   // A database-backed adapter can move this responsibility to a scheduled job.
-  store.clearExpiredSeatLocks();
+  void Promise.resolve(store.clearExpiredSeatLocks()).catch((err) => logger.error({ err }, "Seat-lock cleanup failed"));
 }, 30_000);
 cleanupTimer.unref();
 

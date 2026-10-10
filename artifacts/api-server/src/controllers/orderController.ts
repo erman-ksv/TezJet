@@ -223,7 +223,7 @@ export async function acceptOrder(request: Request, response: Response): Promise
   if (seatLockExpiresAt) {
     setTimeout(() => {
       await store.clearExpiredSeatLocks();
-      emitQueueUpdate(getSocket(request), {
+      await emitQueueUpdate(getSocket(request), {
         type: "seat_lock_expired",
         driverId,
       });
@@ -231,7 +231,7 @@ export async function acceptOrder(request: Request, response: Response): Promise
   }
 
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request), {
+  await emitQueueUpdate(getSocket(request), {
     type: "order_assigned",
     driverId,
   });

@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 import type { Coordinates, DriverQueueStatus } from "../types/domain";
 import { PYATAK_ZONE, REQUIRE_DRIVER_APPROVAL } from "../utils/config";
 import { isWithinRadius } from "../utils/geo";

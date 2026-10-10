@@ -183,12 +183,15 @@ after(async () => {
 });
 
 test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime events", async () => {
-  const fareStops = await request("/fares/stops?route_id=pyatak");
+  const passengerPhone = "+7 777 100 00 01";
+  const passengerToken = await registerUser(passengerPhone, "passenger", "Test Passenger");
+  const fareStops = await request("/fares/stops?route_id=pyatak", { token: passengerToken });
   assert.equal(fareStops.response.status, 200);
   assert.equal(fareStops.body.currency, "KZT");
   assert.equal(fareStops.body.price_per_stop, 500);
   const fareEstimate = await request("/fares/estimate", {
     method: "POST",
+    token: passengerToken,
     body: { route_id: "pyatak", pickup_stop: "C", destination_stop: "D" },
   });
   assert.equal(fareEstimate.response.status, 200);
@@ -196,8 +199,6 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(fareEstimate.body.fare.pricePerStop, 500);
   assert.equal(fareEstimate.body.fare.totalFare, 500);
 
-  const passengerPhone = "+7 777 100 00 01";
-  const passengerToken = await registerUser(passengerPhone, "passenger", "Test Passenger");
   const passengerLoginToken = await loginUser(passengerPhone);
 
   const staleMe = await request("/auth/me", { token: passengerToken });

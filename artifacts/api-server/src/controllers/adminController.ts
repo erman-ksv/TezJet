@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 import type { DriverApprovalStatus } from "../types/domain";
 import { PYATAK_ZONE, updatePyatakCenter } from "../utils/config";
 import { isValidCoordinates } from "../utils/geo";

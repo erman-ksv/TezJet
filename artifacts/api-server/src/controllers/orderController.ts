@@ -94,7 +94,7 @@ export async function createOrder(
     "D",
   ] as const) as PickupPoint;
   const requestedStops = parseRouteStopCodes(request.body?.route_stops);
-  const fare = calculateRouteFare({
+  const fare = await calculateRouteFare({
     routeId: request.body?.route_id,
     pickupStop: request.body?.pickup_stop ?? pickupPoint,
     destinationStop: request.body?.destination_stop,

@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { AuthContext } from "../types/express";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 import { AppError } from "../utils/errors";
 import { translate } from "../utils/i18n";
 import { verifyAccessToken } from "../utils/token";

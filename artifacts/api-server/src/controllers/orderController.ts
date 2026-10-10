@@ -261,17 +261,17 @@ export async function updateOrderStatus(request: Request, response: Response): P
     );
   }
 
-  const updated = store.updateOrder(order.id, {
+  const updated = await store.updateOrder(order.id, {
     status: nextStatus,
     seatLockExpiresAt: nextStatus === "in_transit" ? undefined : order.seatLockExpiresAt,
   }) as Order;
   if (nextStatus === "arrived_at_c" || nextStatus === "en_route_to_c") {
-    store.updateQueueEntry(driverId, {
+    await store.updateQueueEntry(driverId, {
       status: nextStatus,
       priorityLock: true,
     });
   } else if (nextStatus === "in_transit") {
-    store.updateQueueEntry(driverId, {
+    await store.updateQueueEntry(driverId, {
       status: "in_transit",
       priorityLock: true,
       inFifo: false,
@@ -311,7 +311,7 @@ export async function updateOrderStatus(request: Request, response: Response): P
   }
 
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request), {
+  await emitQueueUpdate(getSocket(request), {
     type: "order_released",
     driverId,
   });
@@ -323,7 +323,7 @@ export async function cancelOrder(request: Request, response: Response): Promise
   if (order.status === "completed" || order.status === "cancelled") {
     throw new AppError(409, "Order is already closed", "ORDER_CLOSED");
   }
-  const updated = store.updateOrder(order.id, {
+  const updated = await store.updateOrder(order.id, {
     status: "cancelled",
     cancelledBy: request.auth?.userId,
     driverId: order.driverId,
@@ -362,7 +362,7 @@ export async function cancelOrder(request: Request, response: Response): Promise
     }
   }
   emitOrderUpdate(getSocket(request), updated);
-  emitQueueUpdate(getSocket(request), {
+  await emitQueueUpdate(getSocket(request), {
     type: "order_released",
     driverId: order.driverId,
   });

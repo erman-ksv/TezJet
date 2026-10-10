@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { REQUIRE_DRIVER_APPROVAL } from "../utils/config";
+import type { Store } from "./storeContract";
 import type {
   Coordinates,
   DeviceRegistration,
@@ -16,7 +17,7 @@ import type {
   UserRole,
 } from "../types/domain";
 
-class MemoryStore {
+class MemoryStore implements Store {
   private readonly users = new Map<string, User>();
   private readonly usersByPhone = new Map<string, string>();
   private readonly otpChallenges = new Map<string, OtpChallenge>();

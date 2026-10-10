@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import type { Server } from "socket.io";
+import { logger } from "../lib/logger";
 import { store } from "../store";
 import type { Coordinates, Order, OrderStatus, PickupPoint } from "../types/domain";
 import { SEAT_LOCK_TTL_MS } from "../utils/config";
@@ -222,11 +223,13 @@ export async function acceptOrder(request: Request, response: Response): Promise
   });
   if (seatLockExpiresAt) {
     setTimeout(() => {
-      await store.clearExpiredSeatLocks();
-      await emitQueueUpdate(getSocket(request), {
-        type: "seat_lock_expired",
-        driverId,
-      });
+      void (async () => {
+        await store.clearExpiredSeatLocks();
+        await emitQueueUpdate(getSocket(request), {
+          type: "seat_lock_expired",
+          driverId,
+        });
+      })().catch((err) => logger.error({ err, driverId }, "Seat-lock expiration failed"));
     }, SEAT_LOCK_TTL_MS + 100);
   }
 
@@ -244,7 +247,7 @@ export async function acceptOrder(request: Request, response: Response): Promise
 
 export async function updateOrderStatus(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
-  const order = getOrderForActor(request, String(request.params["orderId"]));
+  const order = await getOrderForActor(request, String(request.params["orderId"]));
   if (order.driverId !== driverId) {
     throw new AppError(403, "Only the assigned driver can update this order", "NOT_ASSIGNED");
   }
@@ -319,7 +322,7 @@ export async function updateOrderStatus(request: Request, response: Response): P
 }
 
 export async function cancelOrder(request: Request, response: Response): Promise<void> {
-  const order = getOrderForActor(request, String(request.params["orderId"]));
+  const order = await getOrderForActor(request, String(request.params["orderId"]));
   if (order.status === "completed" || order.status === "cancelled") {
     throw new AppError(409, "Order is already closed", "ORDER_CLOSED");
   }
@@ -371,7 +374,7 @@ export async function cancelOrder(request: Request, response: Response): Promise
 
 export async function offerToFirstDriver(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
-  const order = getOrderForActor(request, String(request.params["orderId"]));
+  const order = await getOrderForActor(request, String(request.params["orderId"]));
   if (order.pickupPoint !== "D" || order.status !== "searching") {
     throw new AppError(409, "Only searching Point D orders can be pooled", "NOT_POOLING_ORDER");
   }

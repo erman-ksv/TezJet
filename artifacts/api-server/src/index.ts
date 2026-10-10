@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { createRealtimeServer } from "./socket";
 import { store } from "./store";
 
+await store.initialize();
+
 const httpServer = createServer(app);
 const io = createRealtimeServer(httpServer);
 app.locals.io = io;

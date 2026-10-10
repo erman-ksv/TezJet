@@ -256,11 +256,27 @@ test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime 
   assert.equal(reservedForFirstDriver.response.status, 409);
   assert.equal(reservedForFirstDriver.body.error.code, "ORDER_RESERVED");
 
-  const pointCAccepted = await request(`/orders/${pointCOrder.id}/accept`, {
-    method: "POST",
-    token: driverOneToken,
-  });
-  assert.equal(pointCAccepted.response.status, 200);
+  const competingAccepts = await Promise.all([
+    request(`/orders/${pointCOrder.id}/accept`, {
+      method: "POST",
+      token: driverOneToken,
+    }),
+    request(`/orders/${pointCOrder.id}/accept`, {
+      method: "POST",
+      token: driverOneToken,
+    }),
+  ]);
+  assert.equal(
+    competingAccepts.filter((result) => result.response.status === 200).length,
+    1,
+    "only one concurrent acceptance may claim an order",
+  );
+  assert.equal(
+    competingAccepts.filter((result) => result.response.status === 409).length,
+    1,
+    "the duplicate acceptance must receive a conflict",
+  );
+  const pointCAccepted = competingAccepts.find((result) => result.response.status === 200);
   assert.equal(pointCAccepted.body.order.status, "en_route_to_c");
   assert.equal(pointCAccepted.body.order.seat_lock_expires_at > Date.now(), true);
   assert.equal(pointCAccepted.body.seat_lock_minutes, 7);

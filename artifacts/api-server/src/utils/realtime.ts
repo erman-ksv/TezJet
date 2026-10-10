@@ -1,6 +1,6 @@
 import type { Server } from "socket.io";
 import type { Order } from "../types/domain";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 import { serializeOrder } from "./serialize";
 import { PYATAK_ZONE } from "./config";
 

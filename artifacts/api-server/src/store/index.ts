@@ -3,14 +3,16 @@ import { MemoryStore } from "./memoryStore";
 import { PostgresStore } from "./postgresStore";
 
 /**
- * Storage entry point. The current adapter is in-memory; production must not
- * be switched to PostgreSQL until the durable adapter and integration tests
- * are complete. Typing this as Store forces callers to await Promise-capable
- * methods rather than relying on the current adapter's synchronous behavior.
+ * Storage entry point. PostgreSQL activation is explicit so an untested
+ * adapter can never be selected merely because a DATABASE_URL exists.
  */
-if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is required in production; refusing to start with in-memory storage");
+const usePostgresStore = process.env.TEZJET_STORAGE_ADAPTER === "postgres";
+
+if (process.env.NODE_ENV === "production" && !usePostgresStore) {
+  throw new Error("Set TEZJET_STORAGE_ADAPTER=postgres in production; refusing to start with in-memory storage");
+}
+if (usePostgresStore && !process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is required when TEZJET_STORAGE_ADAPTER=postgres");
 }
 
-const useMemoryStore = process.env.NODE_ENV === "test" || !process.env.DATABASE_URL;
-export const store: Store = useMemoryStore ? new MemoryStore() : new PostgresStore();
+export const store: Store = usePostgresStore ? new PostgresStore() : new MemoryStore();

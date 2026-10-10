@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { REQUIRE_DRIVER_APPROVAL } from "../utils/config";
 import type {
   Coordinates,
   DeviceRegistration,
@@ -55,7 +56,12 @@ class MemoryStore {
       locale: input.locale,
       profileLocked: true,
       sessionVersion: 0,
-      driverApprovalStatus: input.role === "driver" ? "approved" : undefined,
+      driverApprovalStatus:
+        input.role === "driver" && REQUIRE_DRIVER_APPROVAL
+          ? "pending"
+          : input.role === "driver"
+            ? "approved"
+            : undefined,
       createdAt: new Date().toISOString(),
     };
     this.users.set(user.id, user);

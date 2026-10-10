@@ -41,7 +41,7 @@ Provision the PostgreSQL database and apply the current Drizzle schema before en
 pnpm --filter @workspace/db run push
 ```
 
-The PostgreSQL adapter is implemented, but it must pass a real PostgreSQL integration test and transaction/race-condition checks before production launch. The current API regression suite still runs against the in-memory adapter.
+CI now provisions PostgreSQL, applies the Drizzle schema, runs the API regression scenarios against the PostgreSQL adapter, verifies that users and orders survive an API process restart, and tests concurrent duplicate acceptance of the same order. Order acceptance and the corresponding queue update run in one database transaction. Before production launch, continue reviewing transaction boundaries for cancellation, status transitions, and seat-lock expiration, and complete deployment-specific security and load testing.
 
 ## Release scenario checks
 

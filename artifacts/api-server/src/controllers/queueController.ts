@@ -118,7 +118,7 @@ export async function leaveQueue(request: Request, response: Response): Promise<
       "ACTIVE_ORDER",
     );
   }
-  store.leaveQueue(driverId);
+  await store.leaveQueue(driverId);
   emitQueueUpdate(request.app.locals.io, { type: "left", driverId });
   response.status(204).send();
 }
@@ -140,7 +140,7 @@ export async function updateQueueLocation(request: Request, response: Response):
       "OUTSIDE_QUEUE_GEOFENCE",
     );
   }
-  const entry = await await store.updateQueueEntry(driverId, { lastLocation: location });
+  const entry = await store.updateQueueEntry(driverId, { lastLocation: location });
   if (!entry) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }

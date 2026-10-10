@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { authenticate, requireRole } from "../middleware/auth";
+import { authenticate, requireRole, requireApprovedDriver } from "../middleware/auth";
 import { antiFakeGPS } from "../middleware/antiFakeGPS";
 import {
   getQueueStatus,
@@ -16,14 +16,17 @@ router.post(
   "/queue/join",
   authenticate,
   requireRole("driver"),
+  requireApprovedDriver,
   antiFakeGPS,
   joinQueue,
 );
-router.delete("/queue/leave", authenticate, requireRole("driver"), leaveQueue);
+router.delete("/queue/leave", authenticate, requireRole("driver"),
+  requireApprovedDriver, leaveQueue);
 router.patch(
   "/queue/location",
   authenticate,
   requireRole("driver"),
+  requireApprovedDriver,
   antiFakeGPS,
   updateQueueLocation,
 );
@@ -31,6 +34,7 @@ router.patch(
   "/queue/status",
   authenticate,
   requireRole("driver"),
+  requireApprovedDriver,
   updateQueueStatus,
 );
 

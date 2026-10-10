@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS "tezjet_routes" (
   "id" text PRIMARY KEY NOT NULL,
   "name" text NOT NULL,
   "active" boolean DEFAULT true NOT NULL,
-  "price_per_stop_kzt" integer NOT NULL,
+  "currency" text DEFAULT 'KZT' NOT NULL,
+  "price_per_stop" integer NOT NULL,
   "created_at" text NOT NULL,
   "updated_at" text NOT NULL,
   "payload" jsonb NOT NULL

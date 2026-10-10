@@ -52,6 +52,27 @@ export function requireRole(
   };
 }
 
+export function requireApprovedDriver(
+  request: Request,
+  _response: Response,
+  next: NextFunction,
+): void {
+  if (!request.auth || request.auth.role !== "driver") {
+    throw new AppError(403, "Driver access is required", "FORBIDDEN");
+  }
+  if (
+    process.env.REQUIRE_DRIVER_APPROVAL !== "false" &&
+    request.auth.user.driverApprovalStatus !== "approved"
+  ) {
+    throw new AppError(
+      403,
+      "Your driver account must be approved before using driver features",
+      "DRIVER_APPROVAL_REQUIRED",
+    );
+  }
+  next();
+}
+
 export function readSocketToken(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;

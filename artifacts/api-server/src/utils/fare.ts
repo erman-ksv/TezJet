@@ -9,9 +9,9 @@ export interface FareRequest {
   routeStops?: unknown;
 }
 
-function getRoute(routeId: unknown): RouteDefinition {
+async function getRoute(routeId: unknown): Promise<RouteDefinition> {
   const id = typeof routeId === "string" && routeId.trim() ? routeId.trim() : "pyatak";
-  const route = store.getRoute(id);
+  const route = await store.getRoute(id);
   if (!route || !route.active) {
     throw new AppError(404, `Route not found: ${id}`, "ROUTE_NOT_FOUND");
   }
@@ -80,8 +80,8 @@ function legacyStops(value: unknown): { pickup?: unknown; destination?: unknown 
   };
 }
 
-export function calculateRouteFare(input: FareRequest = {}): FareQuote {
-  const route = getRoute(input.routeId);
+export async function calculateRouteFare(input: FareRequest = {}): Promise<FareQuote> {
+  const route = await getRoute(input.routeId);
   const legacy = legacyStops(input.routeStops);
   const firstStop = route.stops[0];
   const pickupPosition = resolveStopPosition(
@@ -119,8 +119,8 @@ export function calculateRouteFare(input: FareRequest = {}): FareQuote {
   };
 }
 
-export function getRouteStops(routeId = "pyatak"): RouteStop[] {
-  const route = getRoute(routeId);
+export async function getRouteStops(routeId = "pyatak"): Promise<RouteStop[]> {
+  const route = await getRoute(routeId);
   return route.stops;
 }
 
@@ -143,6 +143,6 @@ export function parseRouteStopCodes(value: unknown): string[] {
 }
 
 /** Backwards-compatible helper for notification/test code. */
-export function calculateFixedFare(stopCodes: string[]): FareQuote {
+export async function calculateFixedFare(stopCodes: string[]): Promise<FareQuote> {
   return calculateRouteFare({ routeStops: stopCodes });
 }

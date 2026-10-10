@@ -160,6 +160,9 @@ function startApiServer() {
       PORT: String(port),
       SESSION_SECRET: "tezjet-test-session-secret",
       ADMIN_PHONE: "+77771000099",
+      MARKET_COUNTRY: "KZ",
+      MARKET_CURRENCY: "KZT",
+      MARKET_PRICE_PER_STOP: "500",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -180,6 +183,19 @@ after(async () => {
 });
 
 test("covers OTP auth, FIFO queue, Point C locks, Point D pooling, and realtime events", async () => {
+  const fareStops = await request("/fares/stops?route_id=pyatak");
+  assert.equal(fareStops.response.status, 200);
+  assert.equal(fareStops.body.currency, "KZT");
+  assert.equal(fareStops.body.price_per_stop, 500);
+  const fareEstimate = await request("/fares/estimate", {
+    method: "POST",
+    body: { route_id: "pyatak", pickup_stop: "C", destination_stop: "D" },
+  });
+  assert.equal(fareEstimate.response.status, 200);
+  assert.equal(fareEstimate.body.fare.currency, "KZT");
+  assert.equal(fareEstimate.body.fare.pricePerStop, 500);
+  assert.equal(fareEstimate.body.fare.totalFare, 500);
+
   const passengerPhone = "+7 777 100 00 01";
   const passengerToken = await registerUser(passengerPhone, "passenger", "Test Passenger");
   const passengerLoginToken = await loginUser(passengerPhone);

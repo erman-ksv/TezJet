@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 import type { Coordinates } from "../types/domain";
 import { MAX_SPEED_KMH } from "../utils/config";
 import { isValidCoordinates, speedKmh } from "../utils/geo";

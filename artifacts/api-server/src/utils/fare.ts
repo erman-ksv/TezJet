@@ -1,5 +1,5 @@
 import type { FareQuote, RouteDefinition, RouteStop } from "../types/domain";
-import { store } from "../store/memoryStore";
+import { store } from "../store";
 import { AppError } from "./errors";
 
 export interface FareRequest {

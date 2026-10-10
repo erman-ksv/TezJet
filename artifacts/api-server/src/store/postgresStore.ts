@@ -290,8 +290,8 @@ export class PostgresStore implements Store {
     if (patch.priorityLock !== undefined) values.priorityLock = patch.priorityLock;
     if (patch.inFifo !== undefined) values.inFifo = patch.inFifo;
     if (patch.activeOrderIds !== undefined) values.activeOrderIds = patch.activeOrderIds;
-    if (patch.currentOrderId !== undefined) values.currentOrderId = patch.currentOrderId ?? null;
-    if (patch.seatLockExpiresAt !== undefined) values.seatLockExpiresAt = patch.seatLockExpiresAt ?? null;
+    if ("currentOrderId" in patch) values.currentOrderId = patch.currentOrderId ?? null;
+    if ("seatLockExpiresAt" in patch) values.seatLockExpiresAt = patch.seatLockExpiresAt ?? null;
     const [row] = await db.update(driverQueueTable).set(values)
       .where(eq(driverQueueTable.driverId, driverId)).returning();
     return row ? asQueueEntry(row as unknown as Record<string, unknown>) : undefined;

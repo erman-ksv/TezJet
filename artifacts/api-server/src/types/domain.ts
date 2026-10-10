@@ -51,8 +51,9 @@ export interface RouteStop {
 export interface RouteDefinition {
   id: string;
   name: string;
-  currency: "KZT";
-  pricePerStopKzt: number;
+  /** ISO 4217 currency code selected by the deployment market. */
+  currency: string;
+  pricePerStop: number;
   active: boolean;
   stops: RouteStop[];
   createdAt: string;
@@ -60,17 +61,17 @@ export interface RouteDefinition {
 }
 
 export interface FareQuote {
-  currency: "KZT";
+  currency: string;
   routeId: string;
   pickupStop: RouteStop;
   destinationStop: RouteStop;
   pickupPosition: number;
   destinationPosition: number;
   distanceStops: number;
-  pricePerStopKzt: number;
+  pricePerStop: number;
   minimumFareApplied: boolean;
   stops: RouteStop[];
-  totalKzt: number;
+  totalFare: number;
   calculatedAt: string;
 }
 

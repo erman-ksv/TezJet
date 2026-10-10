@@ -74,12 +74,12 @@ export interface Store {
   createRoute(input: {
     id: string;
     name: string;
-    pricePerStopKzt: number;
+    pricePerStop: number;
     active: boolean;
   }): MaybePromise<RouteDefinition>;
   updateRoute(
     routeId: string,
-    patch: Partial<Pick<RouteDefinition, "name" | "pricePerStopKzt" | "active">>,
+    patch: Partial<Pick<RouteDefinition, "name" | "pricePerStop" | "active">>,
   ): MaybePromise<RouteDefinition | undefined>;
   deleteRoute(routeId: string): MaybePromise<boolean>;
   addRouteStop(

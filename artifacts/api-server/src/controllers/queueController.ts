@@ -43,7 +43,7 @@ function assertDriver(request: Request): string {
   return request.auth.userId;
 }
 
-export function getQueueStatus(request: Request, response: Response): void {
+export async function getQueueStatus(request: Request, response: Response): Promise<void> {
   response.json({
     zone: {
       id: PYATAK_ZONE.id,
@@ -53,14 +53,14 @@ export function getQueueStatus(request: Request, response: Response): void {
     },
     queue_point: PYATAK_ZONE.center,
     geofence_meters: PYATAK_ZONE.radiusMeters,
-    queue: store.queueSnapshot(),
+    queue: await store.queueSnapshot(),
     your_position: request.auth
-      ? store.getQueuePosition(request.auth.userId)
+      ? await store.getQueuePosition(request.auth.userId)
       : null,
   });
 }
 
-export function joinQueue(request: Request, response: Response): void {
+export async function joinQueue(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
   const location = getLocation(request);
   if (!isWithinRadius(location, PYATAK_ZONE.center, PYATAK_ZONE.radiusMeters)) {
@@ -77,7 +77,7 @@ export function joinQueue(request: Request, response: Response): void {
     1,
     8,
   );
-  const existing = store.getQueueEntry(driverId);
+  const existing = await store.getQueueEntry(driverId);
   if (existing && existing.inFifo === false) {
     throw new AppError(
       409,
@@ -85,7 +85,7 @@ export function joinQueue(request: Request, response: Response): void {
       "ACTIVE_ROUTE",
     );
   }
-  const entry = store.joinQueue({
+  const entry = await store.joinQueue({
     driverId,
     joinedAt: existing?.joinedAt ?? Date.now(),
     status: existing?.status ?? "searching",
@@ -104,13 +104,13 @@ export function joinQueue(request: Request, response: Response): void {
   response.status(201).json({
     message: translate(request.auth?.locale ?? "ru", "queueJoined"),
     entry,
-    position: store.getQueuePosition(driverId),
+    position: await store.getQueuePosition(driverId),
   });
 }
 
-export function leaveQueue(request: Request, response: Response): void {
+export async function leaveQueue(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
-  const entry = store.getQueueEntry(driverId);
+  const entry = await store.getQueueEntry(driverId);
   if (entry?.currentOrderId) {
     throw new AppError(
       409,
@@ -123,10 +123,10 @@ export function leaveQueue(request: Request, response: Response): void {
   response.status(204).send();
 }
 
-export function updateQueueLocation(request: Request, response: Response): void {
+export async function updateQueueLocation(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
   const location = getLocation(request);
-  const current = store.getQueueEntry(driverId);
+  const current = await store.getQueueEntry(driverId);
   if (!current) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
@@ -140,22 +140,22 @@ export function updateQueueLocation(request: Request, response: Response): void 
       "OUTSIDE_QUEUE_GEOFENCE",
     );
   }
-  const entry = store.updateQueueEntry(driverId, { lastLocation: location });
+  const entry = await await store.updateQueueEntry(driverId, { lastLocation: location });
   if (!entry) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
   emitQueueUpdate(request.app.locals.io, { type: "location", driverId });
-  response.json({ entry, position: store.getQueuePosition(driverId) });
+  response.json({ entry, position: await store.getQueuePosition(driverId) });
 }
 
-export function updateQueueStatus(request: Request, response: Response): void {
+export async function updateQueueStatus(request: Request, response: Response): Promise<void> {
   const driverId = assertDriver(request);
   const status = pickEnum(
     request.body?.status,
     "status",
     ["searching", "picking_up", "en_route_to_c", "arrived_at_c", "in_transit"] as const,
   ) as DriverQueueStatus;
-  const current = store.getQueueEntry(driverId);
+  const current = await store.getQueueEntry(driverId);
   if (!current) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
@@ -169,7 +169,7 @@ export function updateQueueStatus(request: Request, response: Response): void {
   if (!allowedTransitions[current.status].includes(status)) {
     throw new AppError(409, "Invalid queue status transition", "INVALID_QUEUE_STATUS");
   }
-  const entry = store.updateQueueEntry(driverId, {
+  const entry = await store.updateQueueEntry(driverId, {
     status,
     priorityLock:
       status === "picking_up" ||
@@ -187,5 +187,5 @@ export function updateQueueStatus(request: Request, response: Response): void {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
   emitQueueUpdate(request.app.locals.io, { type: "status", driverId });
-  response.json({ entry, position: store.getQueuePosition(driverId) });
+  response.json({ entry, position: await store.getQueuePosition(driverId) });
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import type { Store } from "./storeContract";
 import type {
   Coordinates,
@@ -170,9 +170,9 @@ export class PostgresStore implements Store {
     patch: Partial<Pick<User, "locale" | "lastLocation">>,
   ): Promise<User> {
     const { db, usersTable } = await this.database();
-    const values: Record<string, unknown> = {};
+    const values: { locale?: Locale; lastLocation?: Coordinates | null } = {};
     if (patch.locale !== undefined) values.locale = patch.locale;
-    if (patch.lastLocation !== undefined) values.lastLocation = patch.lastLocation;
+    if (patch.lastLocation !== undefined) values.lastLocation = patch.lastLocation as unknown as Record<string, unknown>;
     const [row] = await db.update(usersTable).set(values).where(eq(usersTable.id, userId)).returning();
     if (!row) throw new Error(`User ${userId} not found`);
     return asUser(row as unknown as Record<string, unknown>);
@@ -272,7 +272,17 @@ export class PostgresStore implements Store {
 
   async updateQueueEntry(driverId: string, patch: Partial<QueueEntry>): Promise<QueueEntry | undefined> {
     const { db, driverQueueTable } = await this.database();
-    const values: Record<string, unknown> = {};
+    const values: {
+      joinedAt?: number;
+      status?: QueueEntry["status"];
+      availableSeats?: number;
+      lastLocation?: Record<string, unknown>;
+      priorityLock?: boolean;
+      inFifo?: boolean;
+      activeOrderIds?: string[];
+      currentOrderId?: string | null;
+      seatLockExpiresAt?: number | null;
+    } = {};
     if (patch.joinedAt !== undefined) values.joinedAt = patch.joinedAt;
     if (patch.status !== undefined) values.status = patch.status;
     if (patch.availableSeats !== undefined) values.availableSeats = patch.availableSeats;

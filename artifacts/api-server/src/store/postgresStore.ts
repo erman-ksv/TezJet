@@ -170,7 +170,7 @@ export class PostgresStore implements Store {
     patch: Partial<Pick<User, "locale" | "lastLocation">>,
   ): Promise<User> {
     const { db, usersTable } = await this.database();
-    const values: { locale?: Locale; lastLocation?: Coordinates | null } = {};
+    const values: { locale?: Locale; lastLocation?: Record<string, unknown> | null } = {};
     if (patch.locale !== undefined) values.locale = patch.locale;
     if (patch.lastLocation !== undefined) values.lastLocation = patch.lastLocation as unknown as Record<string, unknown>;
     const [row] = await db.update(usersTable).set(values).where(eq(usersTable.id, userId)).returning();
@@ -286,7 +286,7 @@ export class PostgresStore implements Store {
     if (patch.joinedAt !== undefined) values.joinedAt = patch.joinedAt;
     if (patch.status !== undefined) values.status = patch.status;
     if (patch.availableSeats !== undefined) values.availableSeats = patch.availableSeats;
-    if (patch.lastLocation !== undefined) values.lastLocation = patch.lastLocation;
+    if (patch.lastLocation !== undefined) values.lastLocation = patch.lastLocation as unknown as Record<string, unknown>;
     if (patch.priorityLock !== undefined) values.priorityLock = patch.priorityLock;
     if (patch.inFifo !== undefined) values.inFifo = patch.inFifo;
     if (patch.activeOrderIds !== undefined) values.activeOrderIds = patch.activeOrderIds;

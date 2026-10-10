@@ -6,10 +6,11 @@ export async function listFareStops(_request: Request, response: Response): Prom
   const routeId = typeof _request.query.route_id === "string"
     ? _request.query.route_id
     : "pyatak";
+  const route = await store.getRoute(routeId);
   response.json({
     route_id: routeId,
-    currency: "KZT",
-    price_per_stop: (await store.getRoute(routeId))?.pricePerStopKzt,
+    currency: route?.currency,
+    price_per_stop: route?.pricePerStop,
     stops: await getRouteStops(routeId),
   });
 }

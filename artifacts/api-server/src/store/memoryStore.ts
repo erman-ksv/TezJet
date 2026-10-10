@@ -211,6 +211,42 @@ class MemoryStore implements Store {
     return order;
   }
 
+  claimOrderForDriver(
+    orderId: string,
+    driverId: string,
+    orderPatch: Partial<Order>,
+    queuePatch: Partial<QueueEntry>,
+  ): Order | undefined {
+    const order = this.orders.get(orderId);
+    const entry = this.queueEntries.get(driverId);
+    if (
+      !order ||
+      order.status !== "searching" ||
+      (order.driverId && order.driverId !== driverId) ||
+      (order.offeredDriverId && order.offeredDriverId !== driverId) ||
+      !entry ||
+      entry.availableSeats < order.seats
+    ) {
+      return undefined;
+    }
+    const activePoolOffer =
+      order.pickupPoint === "D" &&
+      order.offeredDriverId === driverId &&
+      entry.inFifo === false &&
+      entry.status === "in_transit";
+    if (!activePoolOffer && this.getQueuePosition(driverId) !== 1) {
+      return undefined;
+    }
+    const updated = this.updateOrder(orderId, {
+      ...orderPatch,
+      driverId,
+      offeredDriverId: driverId,
+    });
+    if (!updated) return undefined;
+    this.updateQueueEntry(driverId, queuePatch);
+    return updated;
+  }
+
   listOrdersForUser(userId: string): Order[] {
     return [...this.orders.values()]
       .filter((order) => order.passengerId === userId || order.driverId === userId)

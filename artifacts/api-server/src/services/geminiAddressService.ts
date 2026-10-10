@@ -121,9 +121,12 @@ JSON shape:
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const result = await fetch(`${GEMINI_ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
+    const result = await fetch(GEMINI_ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
       signal: controller.signal,
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],

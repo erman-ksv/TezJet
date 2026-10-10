@@ -26,7 +26,7 @@ if (!/^[A-Z]{3}$/.test(MARKET_CURRENCY)) {
 const configuredMarketPrice = process.env.MARKET_PRICE_PER_STOP;
 if (
   configuredMarketPrice !== undefined &&
-  (!/^\\d+$/.test(configuredMarketPrice) ||
+  (!/^\d+$/.test(configuredMarketPrice) ||
     !Number.isSafeInteger(Number(configuredMarketPrice)) ||
     Number(configuredMarketPrice) <= 0)
 ) {

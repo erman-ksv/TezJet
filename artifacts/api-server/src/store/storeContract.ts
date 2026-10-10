@@ -53,6 +53,12 @@ export interface Store {
   createOrder(input: Omit<Order, "id" | "createdAt" | "updatedAt">): MaybePromise<Order>;
   getOrder(orderId: string): MaybePromise<Order | undefined>;
   updateOrder(orderId: string, patch: Partial<Order>): MaybePromise<Order | undefined>;
+  claimOrderForDriver(
+    orderId: string,
+    driverId: string,
+    orderPatch: Partial<Order>,
+    queuePatch: Partial<QueueEntry>,
+  ): MaybePromise<Order | undefined>;
   listOrdersForUser(userId: string): MaybePromise<Order[]>;
   listOrders(): MaybePromise<Order[]>;
 

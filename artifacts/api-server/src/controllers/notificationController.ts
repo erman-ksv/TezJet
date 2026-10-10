@@ -49,14 +49,15 @@ export async function testHighPriorityAlert(request: Request, response: Response
   if (!request.auth) {
     throw new AppError(401, "Unauthorized", "UNAUTHORIZED");
   }
+  const fare = await calculateFixedFare(["C"]);
   emitIncomingOrder(request.app.locals.io, request.auth.userId, {
     id: "test-alert",
     passengerId: "test-passenger",
     passengerPhone: "+70000000000",
     pickupPoint: "C",
     pickupLocation: { lat: 0, lng: 0, timestamp: Date.now() },
-    routeStops: (await calculateFixedFare(["C"])).stops,
-    fare: await calculateFixedFare(["C"]),
+    routeStops: fare.stops,
+    fare,
     destination: "Test alert",
     seats: 1,
     status: "searching",

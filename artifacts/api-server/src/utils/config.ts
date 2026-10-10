@@ -13,6 +13,32 @@ if (
 
 export const JWT_SECRET =
   configuredSessionSecret ?? "tezjet-development-secret";
+
+/** Default market is Uzbekistan. A UZS tariff is never guessed or converted from KZT. */
+export const MARKET_COUNTRY = (process.env.MARKET_COUNTRY ?? "UZ").toUpperCase();
+export const MARKET_CURRENCY = (process.env.MARKET_CURRENCY ?? "UZS").toUpperCase();
+if (!/^[A-Z]{2}$/.test(MARKET_COUNTRY)) {
+  throw new Error("MARKET_COUNTRY must be a two-letter ISO country code");
+}
+if (!/^[A-Z]{3}$/.test(MARKET_CURRENCY)) {
+  throw new Error("MARKET_CURRENCY must be a three-letter ISO 4217 currency code");
+}
+const configuredMarketPrice = process.env.MARKET_PRICE_PER_STOP;
+if (
+  configuredMarketPrice !== undefined &&
+  (!/^\\d+$/.test(configuredMarketPrice) ||
+    !Number.isSafeInteger(Number(configuredMarketPrice)) ||
+    Number(configuredMarketPrice) <= 0)
+) {
+  throw new Error("MARKET_PRICE_PER_STOP must be a positive safe integer");
+}
+// Keep the old demo fare only when KZT is explicitly selected; never assume a UZS fare.
+export const MARKET_PRICE_PER_STOP: number | undefined =
+  configuredMarketPrice !== undefined
+    ? Number(configuredMarketPrice)
+    : MARKET_CURRENCY === "KZT"
+      ? 500
+      : undefined;
 export const JWT_EXPIRES_IN = "7d" as const;
 export const OTP_TTL_MS = 5 * 60 * 1000;
 export const QUEUE_GEOFENCE_METERS = Number(

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import type { Store } from "./storeContract";
 import type {
@@ -17,6 +17,14 @@ import type {
 import { REQUIRE_DRIVER_APPROVAL } from "../utils/config";
 
 type DbModule = typeof import("@workspace/db");
+
+function otpDigest(code: string): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret && process.env.NODE_ENV === "production") {
+    throw new Error("SESSION_SECRET is required to protect stored OTP challenges");
+  }
+  return createHmac("sha256", secret ?? "tezjet-development-otp-key").update(code).digest("hex");
+}
 
 function asUser(row: Record<string, unknown>): User {
   return {
@@ -192,7 +200,7 @@ export class PostgresStore implements Store {
     const { db, otpChallengesTable } = await this.database();
     await db.insert(otpChallengesTable).values({
       phoneNumber: challenge.phoneNumber,
-      code: challenge.code,
+      code: otpDigest(challenge.code),
       role: challenge.role,
       locale: challenge.locale,
       fullName: challenge.fullName ?? null,
@@ -200,7 +208,7 @@ export class PostgresStore implements Store {
     }).onConflictDoUpdate({
       target: otpChallengesTable.phoneNumber,
       set: {
-        code: challenge.code,
+        code: otpDigest(challenge.code),
         role: challenge.role,
         locale: challenge.locale,
         fullName: challenge.fullName ?? null,
@@ -213,12 +221,12 @@ export class PostgresStore implements Store {
     const { db, otpChallengesTable } = await this.database();
     const [row] = await db.delete(otpChallengesTable).where(and(
       eq(otpChallengesTable.phoneNumber, phoneNumber),
-      eq(otpChallengesTable.code, code),
+      eq(otpChallengesTable.code, otpDigest(code)),
       gt(otpChallengesTable.expiresAt, Date.now()),
     )).returning();
     return row ? {
       phoneNumber: row.phoneNumber,
-      code: row.code,
+      code,
       role: row.role as UserRole,
       locale: row.locale as Locale,
       fullName: row.fullName ?? undefined,

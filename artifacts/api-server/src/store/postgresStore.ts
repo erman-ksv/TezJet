@@ -14,7 +14,7 @@ import type {
   User,
   UserRole,
 } from "../types/domain";
-import { REQUIRE_DRIVER_APPROVAL } from "../utils/config";
+import { MARKET_COUNTRY, MARKET_CURRENCY, MARKET_PRICE_PER_STOP, REQUIRE_DRIVER_APPROVAL } from "../utils/config";
 
 type DbModule = typeof import("@workspace/db");
 
@@ -70,15 +70,21 @@ function asOrder(row: Record<string, unknown>): Order {
 }
 
 function asRoute(row: Record<string, unknown>): RouteDefinition {
-  return row.payload as RouteDefinition;
+  const payload = row.payload as Record<string, unknown>;
+  const legacyPrice = payload["pricePerStopKzt"];
+  return {
+    ...(payload as unknown as RouteDefinition),
+    currency: String(row.currency ?? payload["currency"] ?? MARKET_CURRENCY),
+    pricePerStop: Number(row.pricePerStop ?? payload["pricePerStop"] ?? legacyPrice ?? 0),
+  };
 }
 
 const defaultRoute: RouteDefinition = {
   id: "pyatak",
   name: "Pyatak",
-  currency: "KZT",
-  pricePerStopKzt: 500,
-  active: true,
+  currency: MARKET_CURRENCY,
+  pricePerStop: MARKET_PRICE_PER_STOP ?? 0,
+  active: MARKET_PRICE_PER_STOP !== undefined,
   stops: [
     { id: "pyatak-stop-c", code: "C", name: "Point C", sequence: 1, position: 1 },
     { id: "pyatak-stop-d", code: "D", name: "Point D", sequence: 2, position: 2 },
@@ -115,12 +121,23 @@ export class PostgresStore implements Store {
             id: seededRoute.id,
             name: seededRoute.name,
             active: seededRoute.active,
-            pricePerStopKzt: seededRoute.pricePerStopKzt,
+            currency: seededRoute.currency,
+            pricePerStop: seededRoute.pricePerStop,
             createdAt: seededRoute.createdAt,
             updatedAt: seededRoute.updatedAt,
             payload: seededRoute as unknown as Record<string, unknown>,
           })
           .onConflictDoNothing();
+        const [storedDefaultRoute] = await mod.db
+          .select({ currency: mod.routesTable.currency })
+          .from(mod.routesTable)
+          .where(eq(mod.routesTable.id, seededRoute.id))
+          .limit(1);
+        if (storedDefaultRoute && storedDefaultRoute.currency !== MARKET_CURRENCY) {
+          throw new Error(
+            `Stored route currency (${storedDefaultRoute.currency}) does not match MARKET_CURRENCY (${MARKET_CURRENCY}) for ${MARKET_COUNTRY}. Update the route currency and approved tariff explicitly before starting this market.`,
+          );
+        }
         return mod;
       })();
     }
@@ -490,12 +507,12 @@ export class PostgresStore implements Store {
     return row ? asRoute(row as unknown as Record<string, unknown>) : undefined;
   }
 
-  async createRoute(input: { id: string; name: string; pricePerStopKzt: number; active: boolean }): Promise<RouteDefinition> {
+  async createRoute(input: { id: string; name: string; pricePerStop: number; active: boolean }): Promise<RouteDefinition> {
     const { db, routesTable } = await this.database();
     const now = new Date().toISOString();
     const route: RouteDefinition = {
       ...input,
-      currency: "KZT",
+      currency: MARKET_CURRENCY,
       stops: [],
       createdAt: now,
       updatedAt: now,
@@ -504,7 +521,8 @@ export class PostgresStore implements Store {
       id: route.id,
       name: route.name,
       active: route.active,
-      pricePerStopKzt: route.pricePerStopKzt,
+      currency: route.currency,
+      pricePerStop: route.pricePerStop,
       createdAt: route.createdAt,
       updatedAt: route.updatedAt,
       payload: route as unknown as Record<string, unknown>,
@@ -513,7 +531,7 @@ export class PostgresStore implements Store {
     return asRoute(row as unknown as Record<string, unknown>);
   }
 
-  async updateRoute(routeId: string, patch: Partial<Pick<RouteDefinition, "name" | "pricePerStopKzt" | "active">>): Promise<RouteDefinition | undefined> {
+  async updateRoute(routeId: string, patch: Partial<Pick<RouteDefinition, "name" | "pricePerStop" | "active">>): Promise<RouteDefinition | undefined> {
     const { db, routesTable } = await this.database();
     const current = await this.getRoute(routeId);
     if (!current) return undefined;
@@ -521,7 +539,8 @@ export class PostgresStore implements Store {
     const [row] = await db.update(routesTable).set({
       name: route.name,
       active: route.active,
-      pricePerStopKzt: route.pricePerStopKzt,
+      currency: route.currency,
+      pricePerStop: route.pricePerStop,
       updatedAt: route.updatedAt,
       payload: route as unknown as Record<string, unknown>,
     }).where(eq(routesTable.id, routeId)).returning();
@@ -575,7 +594,8 @@ export class PostgresStore implements Store {
     await db.update(routesTable).set({
       name: route.name,
       active: route.active,
-      pricePerStopKzt: route.pricePerStopKzt,
+      currency: route.currency,
+      pricePerStop: route.pricePerStop,
       updatedAt: route.updatedAt,
       payload: route as unknown as Record<string, unknown>,
     }).where(eq(routesTable.id, routeId));

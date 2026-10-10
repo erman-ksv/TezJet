@@ -147,7 +147,7 @@ export class PostgresStore implements Store {
       profileLocked: user.profileLocked,
       sessionVersion: user.sessionVersion,
       driverApprovalStatus: user.driverApprovalStatus ?? null,
-      lastLocation: user.lastLocation ?? null,
+      lastLocation: user.lastLocation ? user.lastLocation as unknown as Record<string, unknown> : null,
       createdAt: user.createdAt,
     }).returning();
     return asUser(row as unknown as Record<string, unknown>);

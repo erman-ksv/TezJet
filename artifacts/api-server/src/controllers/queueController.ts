@@ -119,7 +119,7 @@ export async function leaveQueue(request: Request, response: Response): Promise<
     );
   }
   await store.leaveQueue(driverId);
-  emitQueueUpdate(request.app.locals.io, { type: "left", driverId });
+  await emitQueueUpdate(request.app.locals.io, { type: "left", driverId });
   response.status(204).send();
 }
 
@@ -144,7 +144,7 @@ export async function updateQueueLocation(request: Request, response: Response):
   if (!entry) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
-  emitQueueUpdate(request.app.locals.io, { type: "location", driverId });
+  await emitQueueUpdate(request.app.locals.io, { type: "location", driverId });
   response.json({ entry, position: await store.getQueuePosition(driverId) });
 }
 
@@ -186,6 +186,6 @@ export async function updateQueueStatus(request: Request, response: Response): P
   if (!entry) {
     throw new AppError(404, "Driver is not in the queue", "NOT_IN_QUEUE");
   }
-  emitQueueUpdate(request.app.locals.io, { type: "status", driverId });
+  await emitQueueUpdate(request.app.locals.io, { type: "status", driverId });
   response.json({ entry, position: await store.getQueuePosition(driverId) });
 }

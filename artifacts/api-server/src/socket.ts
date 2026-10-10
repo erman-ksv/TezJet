@@ -4,7 +4,7 @@ import { store } from "./store/memoryStore";
 import { readSocketToken } from "./middleware/auth";
 import { verifyAccessToken } from "./utils/token";
 import { logger } from "./lib/logger";
-import { PYATAK_ZONE } from "./utils/config";
+import { PYATAK_ZONE, REQUIRE_DRIVER_APPROVAL } from "./utils/config";
 
 export function createRealtimeServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
@@ -27,6 +27,14 @@ export function createRealtimeServer(httpServer: HttpServer): Server {
       user.role !== claims.role
     ) {
       next(new Error("Unauthorized"));
+      return;
+    }
+    if (
+      REQUIRE_DRIVER_APPROVAL &&
+      user.role === "driver" &&
+      user.driverApprovalStatus !== "approved"
+    ) {
+      next(new Error("Driver approval required"));
       return;
     }
     socket.data.userId = user.id;
@@ -69,6 +77,13 @@ export function createRealtimeServer(httpServer: HttpServer): Server {
 
     socket.on("driver:location", (location: unknown) => {
       if (socket.data.role !== "driver") {
+        return;
+      }
+      const driver = store.getUser(userId);
+      if (
+        REQUIRE_DRIVER_APPROVAL &&
+        driver?.driverApprovalStatus !== "approved"
+      ) {
         return;
       }
       socket.broadcast.emit("driver:location", {
